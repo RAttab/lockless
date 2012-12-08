@@ -3,10 +3,19 @@
     FreeBSD
 
     Unbounded lock free queue.
+
+    Well not quite because it might block on calls to new and delete. These only
+    happen once per operation and either at the very begining for push() or at
+    the very end for pop().
+
 */
 
 #ifndef __lockless_queue_h__
 #define __lockless_queue_h__
+
+#include <cassert>
+#include <atomic>
+#include <memory>
 
 namespace lockless {
 
@@ -14,26 +23,23 @@ namespace lockless {
 /* ENTRY                                                                      */
 /******************************************************************************/
 
-namespace details{
+namespace details {
 
 template<typename T>
 struct Entry
 {
-    Entry(bool sentinel = false) :
-        value(), next(0), sentinel(true)
-    {}
+    Entry() : value(), next(0) {}
 
     Entry(const T& newValue) :
-        value(newValue), next(0), sentinel(false)
+        value(newValue), next(0)
     {}
 
     Entry(T&& newValue) :
-        value(std::move(newValue)), next(0), sentinel(false)
+        value(std::move(newValue)), next(0)
     {}
 
     T value;
     std::atomic<std::shared_ptr<Entry>> next;
-    bool isSentinel;
 };
 
 } // namespace details
@@ -48,7 +54,9 @@ struct Queue
 {
     Queue()
     {
-        std::shared_ptr<Entry> sentinel = new Entry(true);
+        assert(std::atomic<std::shared_ptr<Entry> >().is_lock_free());
+
+        std::shared_ptr<Entry> sentinel = new Entry();
         head.store(sentinel);
         tail.store(sentinel);
     }
@@ -139,4 +147,4 @@ private:
 
 } // namespace lockless
 
-#endif // __jml__lockless_queue_h__
+#endif // __lockless_queue_h__
