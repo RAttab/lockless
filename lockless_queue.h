@@ -20,38 +20,34 @@
 namespace lockless {
 
 /******************************************************************************/
-/* ENTRY                                                                      */
-/******************************************************************************/
-
-namespace details {
-
-template<typename T>
-struct Entry
-{
-    Entry() : value(), next(0) {}
-
-    Entry(const T& newValue) :
-        value(newValue), next(0)
-    {}
-
-    Entry(T&& newValue) :
-        value(std::move(newValue)), next(0)
-    {}
-
-    T value;
-    std::atomic<std::shared_ptr<Entry>> next;
-};
-
-} // namespace details
-
-
-/******************************************************************************/
 /* QUEUE                                                                      */
 /******************************************************************************/
 
 template<typename T>
 struct Queue
 {
+
+private:
+
+    struct Entry
+    {
+        Entry() : value(), next(0) {}
+
+        Entry(const T& newValue) :
+            value(newValue), next(0)
+        {}
+
+        Entry(T&& newValue) :
+            value(std::move(newValue)), next(0)
+        {}
+
+        T value;
+        std::atomic<std::shared_ptr<Entry> > next;
+    };
+
+
+public:
+
     Queue()
     {
         assert(std::atomic<std::shared_ptr<Entry> >().is_lock_free());
