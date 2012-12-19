@@ -1,6 +1,6 @@
-/** lockless_queue.h                                 -*- C++ -*-
+/** queue.h                                          -*- C++ -*-
     Rémi Attab, 08 Dec 2012
-    FreeBSD
+    Copyright (c) 2012 Rémi Attab.  All rights reserved.
 
     Unbounded lock free queue.
 
@@ -13,113 +13,55 @@
 #ifndef __lockless_queue_h__
 #define __lockless_queue_h__
 
+#include "rcu.h"
+
 #include <cassert>
 #include <atomic>
-#include <memory>
 
 namespace lockless {
+
 
 /******************************************************************************/
 /* QUEUE                                                                      */
 /******************************************************************************/
 
+/* Blah
+
+ */
 template<typename T>
 struct Queue
 {
+    /* Blah
 
-private:
-
-    struct Entry
+       Exception Safety: Only throws on calls to new.
+     */
+    Queue() : rcu()
     {
-        Entry() : value(), next(0) {}
+        assert(head.is_lock_free());
 
-        Entry(const T& newValue) :
-            value(newValue), next(0)
-        {}
-
-        Entry(T&& newValue) :
-            value(std::move(newValue)), next(0)
-        {}
-
-        T value;
-        std::atomic<std::shared_ptr<Entry> > next;
-    };
-
-
-public:
-
-    Queue()
-    {
-        assert(std::atomic<std::shared_ptr<Entry> >().is_lock_free());
-
-        std::shared_ptr<Entry> sentinel = new Entry();
+        Entry* sentinel = new Entry();
         head.store(sentinel);
         tail.store(sentinel);
     }
 
-    void push(const T& value)
+
+    /* Blah
+
+       Thread Safety: Can issue calls to new or delete which could
+           lock. Everything else is lock-free and wait-free.
+
+       Exception Safety: Only throws on calls to new or delete.
+     */
+    template<typename T2>
+    void push(T2&& value)
     {
-        pushImpl(std::make_shared<Entry>(value));
-    }
+        RcuGuard guard(rcu);
 
-    void push(T&& value)
-    {
-        pushImpl(std::make_shared<Entry>(std::move(value)));
-    }
+        Entry* entry = new Entry(std::forward(value));
 
-    std::pair<bool, T>
-    peek()
-    {
-        while (true) {
-            std::shared_ptr<Entry> oldHead = head.load();
-            std::shared_ptr<Entry> oldTail = tail.load();
-
-            if (oldHead != oldTail)
-                return { true, oldHead->value };
-
-            else {
-                std::shared_ptr<Entry> oldNext = oldTail->next.load();
-
-                if (!oldNext) return { false, T() };
-
-                // tail is lagging behind so help move it forward.
-                tail.compare_exchange_strong(oldTail, oldNext);
-            }
-        }
-    }
-
-    std::pair<bool, T>
-    pop()
-    {
-        std::shared_ptr<Entry> oldHead = head.load();
-
+        Entry* oldTail = tail.load();
         while(true) {
-            std::shared_ptr<Entry> oldTail = tail.load();
-
-            if (oldHead == oldTail) {
-                std::shared_ptr<Entry> oldNext = oldTail->next.load();
-
-                if (!oldNext) return { false, T() };
-
-                // tail is lagging behind so help move it forward.
-                tail.compare_exchange_strong(oldTail, oldNext);
-            }
-
-            else {
-                std::shared_ptr<Entry> next = oldHead->next.load();
-                if (head.compare_exchange_weak(oldHead, next))
-                    return { true, oldHead->value };
-            }
-        }
-    }
-
-private:
-
-    void pushImpl(std::shared_ptr<Entry> entry)
-    {
-        std::shared_ptr<Entry> oldTail = tail.load();
-        while(true) {
-            std::shared_ptr<Entry> oldNext = oldTail->next.load();
+            Entry* oldNext = oldTail->next.load();
 
             if (!oldNext) {
                 if (!oldTail.compare_exchange_weak(oldNext, entry))
@@ -137,8 +79,90 @@ private:
         }
     }
 
-    std::atomic<std::shared_ptr<Entry> > head;
-    std::atomic<std::shared_ptr<Entry> > tail;
+
+    /* Blah
+
+       Thread Safety: Can issue calls to new or delete which could
+           lock. Everything else is lock-free and wait-free.
+
+       Exception Safety: Only throws on calls delete.
+     */
+    std::pair<bool, T> peek()
+    {
+        RcuGuard guard(rcu);
+
+        while (true) {
+            Entry* oldHead = head.load();
+            Entry* oldTail = tail.load();
+
+            if (oldHead != oldTail)
+                return { true, oldHead->value };
+
+            Entry* oldNext = oldTail->next.load();
+
+            if (!oldNext) return { false, T() };
+
+            // tail is lagging behind so help move it forward.
+            tail.compare_exchange_strong(oldTail, oldNext);
+        }
+    }
+
+
+    /* Blah
+
+       Thread Safety: Can issue calls to new or delete which could
+           lock. Everything else is lock-free and wait-free.
+
+       Exception Safety: Only throws on calls to new or delete.
+     */
+    std::pair<bool, T> pop()
+    {
+        RcuGuard guard(rcu);
+
+        Entry* oldHead = head.load();
+
+        while(true) {
+            Entry* oldTail = tail.load();
+
+            if (oldHead == oldTail) {
+                Entry* oldNext = oldTail->next.load();
+
+                if (!oldNext) return { false, T() };
+
+                // tail is lagging behind so help move it forward.
+                tail.compare_exchange_strong(oldTail, oldNext);
+            }
+
+            else {
+                Entry* oldNext = oldHead->next.load();
+                if (!head.compare_exchange_weak(oldHead, oldNext)) continue;
+
+                T value = oldHead->value;
+                rcu.defer([=] { delete oldHead; });
+                return { true, oldHead->value };
+            }
+        }
+    }
+
+private:
+
+    struct Entry
+    {
+        Entry() : value(), next(0) {}
+
+        template<typename T2>
+        Entry(T2&& newValue) :
+            value(std::forward(newValue)),
+            next(0)
+        {}
+
+        T value;
+        std::atomic<Entry*> next;
+    };
+
+    Rcu rcu;
+    std::atomic<Entry*> head;
+    std::atomic<Entry*> tail;
 };
 
 } // namespace lockless
