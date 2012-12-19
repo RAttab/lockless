@@ -62,6 +62,7 @@ struct Rcu
         assert(epoch->deferList.is_lock_free());
     }
 
+
     /* Blah.
 
        Exception Safety: Does not throw.
@@ -71,6 +72,7 @@ struct Rcu
         doDeferred(current.load());
         doDeferred(other.load());
     }
+
 
     /* Blah
 
@@ -99,6 +101,7 @@ struct Rcu
         return oldCurrent;
     }
 
+
     /* Blah
 
        Thread Safety: Completely lock-free and wait-free.
@@ -110,6 +113,7 @@ struct Rcu
         assert(epoch->count > 0);
         epoch->count--;
     }
+
 
     /** Blah
 
@@ -173,6 +177,7 @@ private:
 
         assert(epoch.count == 0);
     }
+
 
     std::atomic<Epoch*> current;
     std::atomic<Epoch*> other;
