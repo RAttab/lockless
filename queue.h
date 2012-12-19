@@ -68,7 +68,7 @@ public:
     }
 
     std::pair<bool, T>
-    peak()
+    peek()
     {
         while (true) {
             std::shared_ptr<Entry> oldHead = head.load();
