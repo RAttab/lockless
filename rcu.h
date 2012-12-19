@@ -85,7 +85,6 @@ struct Rcu
                     current.compare_exchange_strong(oldCurrent, oldOther))
             {
                 other.store(oldCurrent);
-                oldCurrent = oldOther;
             }
         }
         else oldCurrent = current.load();
@@ -139,11 +138,9 @@ struct Rcu
             continue;
         }
 
-
         EntryList& head = oldCurrent->deferedList;
-        do {
-            entry.next = oldCurrent->deferedList.load();
-        } while (head.compare_excahnge_weak(entry.next, entry));
+        entry.next = oldCurrent->deferedList.load();
+        while (!head.compare_exchange_weak(entry.next, entry));
 
 
         // Exit the epoch which allows it to be swaped again.
