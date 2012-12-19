@@ -9,6 +9,9 @@
 #ifndef __lockless__rcu_h__
 #define __lockless__rcu_h__
 
+#include <cassert>
+#include <atomic>
+
 namespace lockless {
 
 /******************************************************************************/
@@ -29,7 +32,7 @@ struct Rcu
 
     struct Epoch
     {
-        std::atomic<int64_t> count;
+        std::atomic<uint64_t> count;
         std::atomic<DeferEntry*> deferList;
 
         Epoch(RCU* parent) :
@@ -67,11 +70,9 @@ struct Rcu
     /* Blah
 
        Thread Safety: Can issue calls to delete which could lock. Everything
-       else is lock-free and wait-free.
+           else is lock-free and wait-free.
 
-        Exception safety: Does not throw.
-
-        \todo Can delete throw assuming to memory corruption?
+       Exception safety: Does not throw.
      */
     Epoch* enter()
     {
