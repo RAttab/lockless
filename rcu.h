@@ -18,6 +18,11 @@ namespace lockless {
 /* RCU                                                                        */
 /******************************************************************************/
 
+/* Blah
+
+   \todo Hide the implementation and the Epoch & DeferEntry classes in a cpp
+       file. Need a build system first though.
+ */
 struct Rcu
 {
     typedef std::function<void()> DeferFn;
