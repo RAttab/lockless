@@ -1,9 +1,8 @@
 /** rcu.h                                 -*- C++ -*-
-    Rémi Attab, 16 Dec 2012
-    Copyright (c) 2012 Rémi Attab.  All rights reserved.
+    Rémi Attab (remi.attab@gmail.com), 16 Dec 2012
+    FreeBSD-style copyright and disclaimer apply
 
-    Read-Copy-Update implementation.
-
+    Lightweight Read-Copy-Update implementation.
 */
 
 #ifndef __lockless__rcu_h__

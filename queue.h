@@ -1,13 +1,8 @@
-/** queue.h                                          -*- C++ -*-
-    Rémi Attab, 08 Dec 2012
-    Copyright (c) 2012 Rémi Attab.  All rights reserved.
+/** queue.h                                 -*- C++ -*-
+    Rémi Attab (remi.attab@gmail.com), 08 Dec 2012
+    FreeBSD-style copyright and disclaimer apply
 
     Unbounded lock free queue.
-
-    Well not quite because it might block on calls to new and delete. These only
-    happen once per operation and either at the very begining for push() or at
-    the very end for pop().
-
 */
 
 #ifndef __lockless_queue_h__

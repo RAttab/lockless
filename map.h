@@ -1,15 +1,14 @@
-/** lockless_map.h                                 -*- C++ -*-
-    Rémi Attab, 08 Dec 2012
-    FreeBSD
+/** map.h                                 -*- C++ -*-
+    Rémi Attab (remi.attab@gmail.com), 08 Dec 2012
+    FreeBSD-style copyright and disclaimer apply
 
     Lockfree linear probing hash table with chaining resizes.
-
 */
 
 #ifndef __lockless_map_h__
 #define __lockless_map_h__
 
-#include "utils.h"
+#include "atomizer.h"
 
 #include <atomic>
 
