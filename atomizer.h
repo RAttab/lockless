@@ -1,9 +1,8 @@
-/** lockless_utils.h                                 -*- C++ -*-
-    Rémi Attab, 08 Dec 2012
-    Copyright (c) 2012 Datacratic.  All rights reserved.
+/** atomizer.h                                 -*- C++ -*-
+    Rémi Attab (remi.attab@gmail.com), 08 Dec 2012
+    FreeBSD-style copyright and disclaimer apply
 
-    utilities for storing arbitrary values into an lockless container.
-
+    Turns any given type into an atomically manipulable type.
 */
 
 #ifndef __lockless_utils_h__
@@ -33,16 +32,35 @@ struct IsAtomic
 /******************************************************************************/
 
 template<typename T, bool isAtomic = IsAtomic<T>::value>
-struct Container {};
+struct Atomizer {};
 
 template<typename T>
-struct Container<T, true>
+struct Atomizer<T, true>
 {
     typedef uint64_t type;
 
-    Container()
+    static type alloc(T value)
+    {
+        Converter<T> conv;
+        conv.value = value;
+        return conv.atom;
+    }
+
+    static T load(type atom)
+    {
+        Converter<T> conv;
+        conv.atom = atom;
+        return conv.value;
+    }
+
+    static void dealloc(type atom) {}
+
+private:
+
+    Atomizer()
     {
         std::assert(std::atomic<type>().is_lock_free());
+        assert(std::atomic<type>().is_lock_free());
     }
 
 
@@ -50,36 +68,15 @@ struct Container<T, true>
     {
         union {
             T value;
-            type cont;
+            uint64_t atom;
         };
     };
-
-    static type alloc(T value)
-    {
-        Converter<T> conv;
-        conv.value = value;
-        return conv.cont;
-    }
-
-    static T load(type cont)
-    {
-        Converter<T> conv;
-        conv.cont = cont;
-        return conv.value;
-    }
-
-    static void dealloc(type cont) {}
 };
 
 template<typename T>
-struct Container<T, false>
+struct Atomizer<T, false>
 {
     typedef T* type;
-
-    Container()
-    {
-        std::assert(std::atomic<type>().is_lock_free());
-    }
 
     static type alloc(const T& value)
     {
@@ -91,12 +88,20 @@ struct Container<T, false>
         return new T(std::forward(value));
     }
 
-    static T load(type cont)
+    static T load(type atom)
     {
-        return *cont;
+        return *atom;
     }
 
-    static void free(type cont) { delete T; }
+    static void dealloc(type atom) { delete T; }
+
+private:
+
+    Atomizer()
+    {
+        std::assert(std::atomic<type>().is_lock_free());
+    }
+
 };
 
 
