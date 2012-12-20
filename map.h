@@ -100,6 +100,7 @@ public:
 
     void resize(size_t capacity)
     {
+        RcuGuard guard(rcu);
         resizeImpl(adjustCapacity(capacity));
     }
 
@@ -164,8 +165,6 @@ private:
 
     Table* resizeImpl(size_t newCapacity, bool force = false)
     {
-        RcuGuard guard(rcu);
-
         Table* oldTable;
 
         /* Insert the new table in the chain. */
