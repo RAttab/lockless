@@ -72,7 +72,7 @@ private:
 
         static Table* alloc(size_t capacity)
         {
-            size_t size = sizeof(capacity) + sizeof(next);
+            size_t size = sizeof(capacity) + sizeof(next) + sizeof(prev);
             size += sizeof(Bucket) * capacity;
 
             Table* table = malloc(size);
