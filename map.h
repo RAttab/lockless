@@ -9,9 +9,11 @@
 #define __lockless_map_h__
 
 #include "atomizer.h"
+#include "magic.h"
 #include "utils.h"
 
 #include <atomic>
+#include <cassert>
 #include <cstdlib>
 
 namespace lockless {
@@ -20,17 +22,33 @@ namespace lockless {
 /* MAP                                                                        */
 /******************************************************************************/
 
+/* Blah
+
+   --- Implementation Details ---
+
+   MagicValue::mask0 -> unset key or value.
+       Both must be set before a bucket is available.
+
+   MagicValue::mask1 -> tombstoned bucket.
+       Only the key has to be set to kill the bucket.
+
+ */
 template<
     typename Key,
     typename Value,
-    typename Hash = std::hash<K> >
+    typename Hash = std::hash<K>
+    typename MKey = MagicValue<Key>,
+    typename MValue = MagicValue<Value> >
 struct Map
 {
 
 private:
 
-    details::Atomizer<Key>::type KeyAtom;
-    details::Atomizer<Value>::type ValueAtom;
+    typedef details::Atomizer<Key> KeyAtomizer;
+    typedef KeyAtomizer::type KeyAtom;
+
+    typedef details::Atomizer<Value> ValueAtomizer;
+    typedef ValueAtomizer::type ValueAtom;
 
     struct Bucket
     {
@@ -39,48 +57,8 @@ private:
 
         void init()
         {
-            keyAtom.store(MagicValue<KeyAtom>::mask);
-            valueAtom.store(MagicValue<ValueAtom>::mask);
-        }
-
-        bool isKeySet() const
-        {
-            return !isMagicValue(keyAtom.load();
-        }
-
-        bool isValueSet() const
-        {
-            return !isMagicValue(valueAtom.load());
-        }
-
-        bool isSet() const
-        {
-            return isKeySet() && isValueSet();
-        }
-
-        Key key() const
-        {
-            return Atomizer<Key>::load(keyAtom);
-        }
-
-        Value value() const
-        {
-            return Atomizer<Value>::load(valueAtom);
-        }
-
-        void unset()
-        {
-            KeyAtom keyCopy = keyAtom.load();
-            ValueAtom valueCopy = valueAtom.load();
-
-            keyAtom.store(MagicValue<KeyAtom>::mask);
-            valueAtom.store(MagicValue<ValueAtom>::mask);
-
-            if (!isMagicValue(keyCopy))
-                details::Atomizer::dealloc(keyCopy);
-
-            if (!isMagicValue(valueCopy))
-                details::Atomizer::dealloc(valueCopy);
+            keyAtom.store(MKey::mask0);
+            valueAtom.store(MValue::mask0);
         }
     };
 
@@ -88,27 +66,25 @@ private:
     {
         size_t capacity;
         std::atomic<Table*> next;
+        std::atomic<Table*>* prev;
 
         Bucket buckets[1];
-    };
 
-    struct TableGuard
-    {
-        TableGuard(Map* instance, Table* table) :
-            instance(instance), table(table)
-        {}
-        ~TableGuard() { instance->exitTable(table); }
-
-        Table& operator* () const { return *table; }
-        Table& operator-> () const { return *table; }
-
-        Bucket& operator[] (size_t index)
+        static Table* alloc(size_t capacity)
         {
-            return table->buckets[index];
-        }
+            size_t size = sizeof(capacity) + sizeof(next);
+            size += sizeof(Bucket) * capacity;
 
-        Map* instance;
-        Table* table;
+            Table* table = malloc(size);
+            table->capacity = capacity;
+            table->next.store(nullptr);
+            table->prev = nullptr;
+
+            for (size_t i = 0; i < newCapacity; ++i)
+                table->buckets[i].init();
+
+            return table;
+        }
     };
 
 public:
@@ -120,24 +96,27 @@ public:
     }
 
     size_t size() const { return size.load(); }
-    size_t capacity() const { return table.load()->capacity; }
+    size_t capacity() const { return newestTable()->capacity; }
 
     void resize(size_t capacity)
     {
         resizeImpl(adjustCapacity(capacity));
     }
 
-    std::pair<bool, V> find(const K& key)
+    std::pair<bool, Value> find(const Key& key)
     {
         RcuGuard guard(rcu);
-
-
     }
 
-    std::pair<bool, V> insert(const K& key, const V& value)
+    bool insert(const Key& key, const Value& value)
     {
         RcuGuard guard(rcu);
 
+        size_t hash = hashFn(key);
+        KeyAtom keyAtom = KeyAtomizer::alloc(key);
+        ValueAtom valueAtom = ValueAtomizer::alloc(value);
+
+        // ...
     }
 
 private:
@@ -159,47 +138,85 @@ private:
         return newest;
     }
 
-    void resizeImpl(size_t newCapacity, bool force = false)
+    Table* moveBucket(Table* dest, Bucket& src)
+    {
+        // tombstone the bucket so nothing can be inserted there.
+        KeyAtom keyAtom = bucket.exchange(MKey::mask1);
+        ValueAtom valueAtom = bucket.load();
+
+        if (isMagicValue(keyAtom) || isMagicValue(valueAtom))
+            return;
+
+        Key key = KeyAtomizer::load(keyAtom);
+        size_t hash = hashFn(key);
+
+        // The insert may fail if there's a move going into the dest table. In
+        // this case load the dest's next table and try to move into that table.
+        while(!insert(dest, hash, keyAtom, valueAtom)) {
+            Table* next = dest->next.load();
+
+            // Resizing during a resize... What could possibly go wrong?
+            dest = next ? next : resizeImpl(dest->capacity * 2);
+        }
+
+        return dest;
+    }
+
+    Table* resizeImpl(size_t newCapacity, bool force = false)
     {
         RcuGuard guard(rcu);
 
-        std::unique_ptr<Table, MallocDeleter> newTable;
-
         Table* oldTable;
+
+        /* Insert the new table in the chain. */
+
+        std::unique_ptr<Table, MallocDeleter> safeNewTable;
+        bool done;
+
         do {
             oldTable = newestTable();
-            if (force)
-                newCapacity = std::max(newCapacity, oldTable->capacity);
-            else (newest && newest->capacity >= newCapacity)
-                return;
 
-            if (!newTable) {
-                // + 1: capacity + next
-                newTable.reset(calloc(sizeof(Bucket), newCapacity + 1));
-                newTable->capacity = newCapacity;
-
-                for (size_t i = 0; i < newCapacity; ++i)
-                    newTable->buckets[i].init();
+            if (oldTable) {
+                if (newCapacity < oldTable->capacity) return;
+                if (!force && newCapacity == oldTable->capacity) return;
             }
-            newTable->next = oldTable;
 
-            std::atomic<Table*>* toChange = oldTable ? &oldTable->next : &table;
+            if (!safeNewTable)
+                safeNewTable.reset(Table::alloc(newCapacity));
 
-            // Use a strong cas here to avoid calling newestTable.
-            if (toChange->compare_and_exchange_strong(oldTable, newTable))
-                break;
-        }
+            safeNewTable->prev = oldTable ? &oldTable->next : &table;
 
-        for (size_t i = 0; i < newCapacity; ++i) {
-            Bucket& bucket = oldTable->buckets[i];
+            // Use a strong cas here to avoid calling newestTable unecessarily.
+            done = safeNewTable->prev->compare_and_exchange_strong(
+                    nullptr, safeNewTable.get())
+        } while(!done);
 
-            if (!bucket.isSet()) continue;
-            // \todo insert(newTable)
-            bucket.unset();
-        }
 
-        Table* toDelete = newTable.release();
-        rcu.defer([=] { std::free(toDelete); });
+        Table* newTable = safeNewTable.release();
+
+
+        /* Move all the elements of the old table to the new table. */
+
+        Table* dest = newTable;
+        for (size_t i = 0; i < newCapacity; ++i)
+            dest = moveBucket(dest, oldTable->buckets[i]);
+
+
+        /* Get rid of oldTable */
+
+        std::assert(oldTable->prev);
+        std::assert(oldTable->prev->load() == oldTable);
+
+        // Don't store newTable because it might have been resized and removed
+        // from the list.
+        oldTable->prev.store(oldTable->next.load());
+        rcu.defer([=] { std::free(oldTable); });
+
+        return newTable;
+    }
+
+    bool insert(Table* t, size_t hash, KeyAtom keyAtom, ValueAtom valueAtom)
+    {
     }
 
     Hash hashFn;
