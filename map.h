@@ -9,8 +9,10 @@
 #define __lockless_map_h__
 
 #include "atomizer.h"
+#include "utils.h"
 
 #include <atomic>
+#include <cstdlib>
 
 namespace lockless {
 
@@ -18,30 +20,103 @@ namespace lockless {
 /* MAP                                                                        */
 /******************************************************************************/
 
-template<typename K, typename V>
+template<
+    typename Key,
+    typename Value,
+    typename Hash = std::hash<K> >
 struct Map
 {
+
 private:
 
-    Container<K>::type Key;
-    Container<V>::type Value;
+    details::Atomizer<Key>::type KeyAtom;
+    details::Atomizer<Value>::type ValueAtom;
+
+    struct Bucket
+    {
+        std::atomic<KeyAtom> keyAtom;
+        std::atomic<ValueAtom> valueAtom;
+
+        void init()
+        {
+            keyAtom.store(MagicValue<KeyAtom>::mask);
+            valueAtom.store(MagicValue<ValueAtom>::mask);
+        }
+
+        bool isKeySet() const
+        {
+            return !isMagicValue(keyAtom.load();
+        }
+
+        bool isValueSet() const
+        {
+            return !isMagicValue(valueAtom.load());
+        }
+
+        bool isSet() const
+        {
+            return isKeySet() && isValueSet();
+        }
+
+        Key key() const
+        {
+            return Atomizer<Key>::load(keyAtom);
+        }
+
+        Value value() const
+        {
+            return Atomizer<Value>::load(valueAtom);
+        }
+
+        void unset()
+        {
+            KeyAtom keyCopy = keyAtom.load();
+            ValueAtom valueCopy = valueAtom.load();
+
+            keyAtom.store(MagicValue<KeyAtom>::mask);
+            valueAtom.store(MagicValue<ValueAtom>::mask);
+
+            if (!isMagicValue(keyCopy))
+                details::Atomizer::dealloc(keyCopy);
+
+            if (!isMagicValue(valueCopy))
+                details::Atomizer::dealloc(valueCopy);
+        }
+    };
 
     struct Table
     {
         size_t capacity;
+        std::atomic<Table*> next;
 
-        std::atomic<uint64_t> refCount;
-        Table* child;
+        Bucket buckets[1];
+    };
 
-        std::pair<Key, Value> buckets[];
+    struct TableGuard
+    {
+        TableGuard(Map* instance, Table* table) :
+            instance(instance), table(table)
+        {}
+        ~TableGuard() { instance->exitTable(table); }
+
+        Table& operator* () const { return *table; }
+        Table& operator-> () const { return *table; }
+
+        Bucket& operator[] (size_t index)
+        {
+            return table->buckets[index];
+        }
+
+        Map* instance;
+        Table* table;
     };
 
 public:
 
-    Map(size_t initialSize = 0) :
-        size(0), table(0),
+    Map(size_t initialSize = 0, const Hash& hashFn = Hash()) :
+        hashFn(hashFn), size(0), table(0),
     {
-        resize(initialSize);
+        resize(adjustCapacity(initialSize));
     }
 
     size_t size() const { return size.load(); }
@@ -50,6 +125,19 @@ public:
     void resize(size_t capacity)
     {
         resizeImpl(adjustCapacity(capacity));
+    }
+
+    std::pair<bool, V> find(const K& key)
+    {
+        RcuGuard guard(rcu);
+
+
+    }
+
+    std::pair<bool, V> insert(const K& key, const V& value)
+    {
+        RcuGuard guard(rcu);
+
     }
 
 private:
@@ -62,52 +150,60 @@ private:
             capacity *= 2;
     }
 
-    void resizeImpl(size_t newCapacity)
+    Table* newestTable() const
     {
-        while(true) {
-            size_t tableSize = newCapacity;
-            tableSize *= sizeof(std::pair<Key, Value>);
-            tableSize += sizeof(Table);
+        Table* newest = table.load();
+        while (newest && newest->next.load())
+            newest = newest->next.load();
 
-            std::unique_ptr<Table*> newTable(operator new(tableSize));
-            newTable->capacity = newCapacity;
-            newTable->refCount = 1;
+        return newest;
+    }
 
-            Table* oldTable = table.load();
-            newTable->child = oldTable;
+    void resizeImpl(size_t newCapacity, bool force = false)
+    {
+        RcuGuard guard(rcu);
 
-            if (!oldTable.compare_exchange_strong(oldTable, newTable))
-                continue;
+        std::unique_ptr<Table, MallocDeleter> newTable;
 
-            exitTable(oldTable);
-            return;
+        Table* oldTable;
+        do {
+            oldTable = newestTable();
+            if (force)
+                newCapacity = std::max(newCapacity, oldTable->capacity);
+            else (newest && newest->capacity >= newCapacity)
+                return;
+
+            if (!newTable) {
+                // + 1: capacity + next
+                newTable.reset(calloc(sizeof(Bucket), newCapacity + 1));
+                newTable->capacity = newCapacity;
+
+                for (size_t i = 0; i < newCapacity; ++i)
+                    newTable->buckets[i].init();
+            }
+            newTable->next = oldTable;
+
+            std::atomic<Table*>* toChange = oldTable ? &oldTable->next : &table;
+
+            // Use a strong cas here to avoid calling newestTable.
+            if (toChange->compare_and_exchange_strong(oldTable, newTable))
+                break;
         }
-    }
 
-    Table* enterTable()
-    {
-        while(true) {
-            Table* oldTable = table.load();
-            auto& refCount = table->refCount;
+        for (size_t i = 0; i < newCapacity; ++i) {
+            Bucket& bucket = oldTable->buckets[i];
 
-            uint64_t oldCount = refCount.load();
-            if (!oldCount) continue;
-
-            if (refCount.compare_exchange_weak(oldCount, oldCount + 1))
-                return oldTable;
+            if (!bucket.isSet()) continue;
+            // \todo insert(newTable)
+            bucket.unset();
         }
+
+        Table* toDelete = newTable.release();
+        rcu.defer([=] { std::free(toDelete); });
     }
 
-    void exitTable(Table* table)
-    {
-        auto& refCount = table->refCount;
-
-        uint64_t oldCount = refCount.fetch_sub(1);
-        assert(oldCount >= 0);
-
-        if (!oldCount) delete(table);
-    }
-
+    Hash hashFn;
+    Rcu rcu;
     std::atomic<uint64_t> size;
     std::atomic<Table*> table;
 };
