@@ -107,50 +107,6 @@ private:
 
 
 } // namespace details
-
-
-/******************************************************************************/
-/* MAGIC VALUE                                                                */
-/******************************************************************************/
-
-/* Overide to provide whatever mask is appropriate for your type's magic value.
-
- */
-template<typename T>
-struct MagicValue
-{
-    // Grab the most-significant bits which are unlikely to be used.
-    static T mask0 = 1ULL << 63;
-    static T mask1 = 1ULL << 62;
-};
-
-template<typename T>
-struct MagicValue<T*>
-{
-    // Used the least-significant bits of the pointers.
-    // Assumes 64-bit alignmen -> DON'T USE ON char* !
-    static T* mask0 = reinterpret_cast<T*>(1);
-    static T* mask1 = reinterpret_cast<T*>(2);
-};
-
-template<typename T, typename Magic = MagicValue<T> >
-bool isMagicValue0(T value)
-{
-    return value & Magic::mask0;
-}
-
-template<typename T, typename Magic = MagicValue<T> >
-bool isMagicValue1(T value)
-{
-    return value & Magic::mask1;
-}
-
-template<typename T, typename Magic = MagicValue<T> >
-bool isMagicValue(T value)
-{
-    return isMagicValue0<T, Magic>(value) || isMagicValue1<T, Magic>(value);
-}
-
 } // namespace lockless
 
 #endif // __lockless_utils_h__
