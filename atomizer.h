@@ -63,7 +63,8 @@ private:
         assert(std::atomic<type>().is_lock_free());
     }
 
-
+    // \todo Need to make sure that value is right aligned on atom.
+    // Otherwise the default MagicValues will clash on little-endian arch.
     struct Converter
     {
         union {
@@ -118,19 +119,36 @@ private:
 template<typename T>
 struct MagicValue
 {
-    static T mask = -1;
+    // Grab the most-significant bits which are unlikely to be used.
+    static T mask0 = 1ULL << 63;
+    static T mask1 = 1ULL << 62;
 };
 
 template<typename T>
 struct MagicValue<T*>
 {
-    static T* mask = reinterpret_cast<T*>(1);
+    // Used the least-significant bits of the pointers.
+    // Assumes 64-bit alignmen -> DON'T USE ON char* !
+    static T* mask0 = reinterpret_cast<T*>(1);
+    static T* mask1 = reinterpret_cast<T*>(2);
 };
 
-template<typename T>
+template<typename T, typename Magic = MagicValue<T> >
+bool isMagicValue0(T value)
+{
+    return value & Magic::mask0;
+}
+
+template<typename T, typename Magic = MagicValue<T> >
+bool isMagicValue1(T value)
+{
+    return value & Magic::mask1;
+}
+
+template<typename T, typename Magic = MagicValue<T> >
 bool isMagicValue(T value)
 {
-    return value & MagicValue<T>::mask;
+    return isMagicValue0<T, Magic>(value) || isMagicValue1<T, Magic>(value);
 }
 
 } // namespace lockless
