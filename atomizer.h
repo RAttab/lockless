@@ -106,6 +106,33 @@ private:
 
 
 } // namespace details
+
+
+/******************************************************************************/
+/* MAGIC VALUE                                                                */
+/******************************************************************************/
+
+/* Overide to provide whatever mask is appropriate for your type's magic value.
+
+ */
+template<typename T>
+struct MagicValue
+{
+    static T mask = -1;
+};
+
+template<typename T>
+struct MagicValue<T*>
+{
+    static T* mask = reinterpret_cast<T*>(1);
+};
+
+template<typename T>
+bool isMagicValue(T value)
+{
+    return value & MagicValue<T>::mask;
+}
+
 } // namespace lockless
 
 #endif // __lockless_utils_h__
