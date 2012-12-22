@@ -139,15 +139,15 @@ moveBucket(Table* dest, Bucket& src) -> Table*
     } while (!src.value.compare_exchange_weak(oldValueAtom, valueAtom));
 
 
+    // If we're dealing with a partial insert just tombstone the whole thing.
+    if (isMoving<MKey>(keyAtom) && isTombstone<MValue>(valueAtom))
+        goto out; // Let the velociraptor strike me!
+
     // We only check value because that's the last one to be written.
     if (isTombstone<MValue>(valueAtom)) return dest;
 
     // The move is done so skip to step 3. to help the cleanup.
-    if (isTombstone<MKey>(keyAtom)) goto out; // Let the velociraptor strike me!
-
-    // Don't move partial inserts. The op will be restarted in the new table
-    // once the move is complete.
-    if (isValue<MKey>(oldKeyAtom) && !isValue<MValue>(oldValueAtom)) goto out;
+    if (isTombstone<MKey>(keyAtom)) goto out;
 
     std::assert(isMoving<MKey>(keyAtom) && isMonving<MValue>(valueAtom));
 
