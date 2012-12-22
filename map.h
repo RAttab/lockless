@@ -37,19 +37,6 @@ struct Map
 
 private:
 
-    enum Policy
-    {
-        ResizeThreshold = 4,
-        CleanupThreshold = 4
-    };
-
-    enum InsertResult
-    {
-        KeyExists,
-        KeyInserted,
-        TryAgain,
-    };
-
     typedef details::Atomizer<Key> KeyAtomizer;
     typedef KeyAtomizer::type KeyAtom;
 
@@ -86,7 +73,7 @@ public:
         KeyAtom keyAtom = KeyAtomizer::alloc(key);
         ValueAtom valueAtom = ValueAtomizer::alloc(value);
 
-        // ...
+        return insertImpl(table.load(), hash, key, keyAtom, valueAtom);
     }
 
 private:
@@ -153,15 +140,15 @@ private:
         return (hash + i) & (capacity - 1);
     }
 
-    void checkPolicies(size_t capacity, size_t probes, size_t tombstones);
     Table* moveBucket(Table* dest, Bucket& src);
-    Table* resizeImpl(size_t newCapacity, bool force = false);
+    bool insertImpl(
+            Table* t,
+            const size_t hash,
+            const Key& key,
+            const KeyAtom keyAtom,
+            const ValueAtom valueAtom);
 
-    InsertResult
-    insertImpl(
-            Table* t, size_t hash,
-            Key key, KeyAtom keyAtom,
-            ValueAtom valueAtom);
+    Table* resizeImpl(size_t newCapacity, bool force = false);
 
     Hash hashFn;
     Rcu rcu;
@@ -169,9 +156,10 @@ private:
     std::atomic<Table*> table;
 };
 
-#include "map.tcc"
-
 } // namespace lockless
+
+// Implementation details.
+#include "map.tcc"
 
 #endif // __lockless_map_h__
 

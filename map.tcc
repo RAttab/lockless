@@ -6,9 +6,6 @@
 
 */
 
-#ifndef __lockless__map_tcc__
-#define __lockless__map_tcc__
-
 namespace lockless {
 
 /******************************************************************************/
@@ -16,6 +13,12 @@ namespace lockless {
 /******************************************************************************/
 
 namespace details {
+
+template<typename Magic, typename Atom>
+bool isValue(Atom atom)
+{
+    return atom & ~(Magic::mask0 | Magic::mask1) == atom;
+}
 
 template<typename Magic, typename Atom>
 bool isEmpty(Atom atom)
@@ -65,21 +68,6 @@ enum Policy
 /******************************************************************************/
 /* MAP                                                                        */
 /******************************************************************************/
-
-template<typename K, typename V, typename H, typename MK, typename MV>
-bool
-Map<K,V,H,MK,MV>::
-checkPolicies(Table* t, size_t probes, size_t tombstones)
-{
-    if (probes >= RESIZE_THRESHOLD)
-        resizeImpl(capacity * 2);
-
-#if 0 // Could trigger a double resizize. Disable for now.
-    if (tombstones >= TOMBSTONE_THRESHOLD)
-        resizeImpl(capacity, true);
-#endif
-}
-
 
 /* This op works in 3 phases to work around these 2 problems:
 
@@ -157,10 +145,14 @@ moveBucket(Table* dest, Bucket& src) -> Table*
     // The move is done so skip to step 3. to help the cleanup.
     if (isTombstone<MKey>(keyAtom)) goto out; // Let the velociraptor strike me!
 
-
-    // 2. Move the value to the dest table.
+    // Don't move partial inserts. The op will be restarted in the new table
+    // once the move is complete.
+    if (isValue<MKey>(oldKeyAtom) && !isValue<MValue>(oldValueAtom)) goto out;
 
     std::assert(isMoving<MKey>(keyAtom) && isMonving<MValue>(valueAtom));
+
+
+    // 2. Move the value to the dest table.
 
     keyAtom = clearMarks(keyAtom):
     valueAtom = clearMarks(valueAtom):
@@ -192,83 +184,132 @@ moveBucket(Table* dest, Bucket& src) -> Table*
     return dest;
 }
 
+
+/* The op can be either in insert or move mode.
+
+   Move mode is enabled when there's an ongoing resize on the table. When in
+   resize mode we first move all the KVs within our probing window to the newest
+   table before we restart the operation on the new table.
+
+   Otherwise we proceed to insert our KV pair in 2 phases: we first try to
+   insert the key and then the value. The key isn't officially inserted until
+   both these operations are completed which means that even if the key is set,
+   the operation could still abort.
+
+   If we exhaust our probing window then one of 3 scenarios could have occured:
+
+   1. The table's load factor is getting too high. Lower it by resizing with the
+      twice the current size.
+
+   2. The table is getting clogged up with tombstones. Clean them up by copying
+      all the non-tombstone entries to a fresh table of the same size.
+
+   3. There's an ongoing resize. In this case we've just finished moving our
+      probing window to the new table.
+
+   In all 3 cases, we need to restart the insert operation so we do a recursive
+   on the next table. Note that we can't skip straight to newest or we would
+   break the invariants of our table chain.
+
+   Also note that by the time we recurse, the key we're looking for is
+   guaranteed to have been moved down the table chain if it was present in this
+   table. This holds because we've just exhausted our probing window which means
+   that the key can't be in it because it either got moved to the next table in
+   the chain or it was never in there to begin with.
+
+ */
 template<typename K, typename V, typename H, typename MK, typename MV>
-auto
+bool
 Map<K,V,H,MK,MV>::
 insertImpl(
-        Table* t, size_t hash,
-        Key key, KeyAtom keyAtom,
-        ValueAtom valueAtom) -> InsertResult
+        Table* t,
+        const Key& key,
+        const size_t hash,
+        const KeyAtom keyAtom,
+        const ValueAtom valueAtom)
 {
-    InsertResult result = None;
-    size_t i;
+    Table* dest = nullptr;
     size_t tombstones = 0;
 
-    for (i = 0; i < t->capacity; ++i) {
+    for (size_t i = 0; i < ProbeWindow; ++i) {
         Bucket& bucket = t->buckets[this->bucket(hash, i, t->capacity)];
 
+        // Resize is underway so start moving KVs.
+        if (t->isResizing()) {
+            if (!dest) dest = t->next.load();
+            dest = moveBucket(dest, bucket);
+            continue;
+        }
+
         KeyAtom bucketKeyAtom = bucket.key.load();
-        if (isKeyTomstone(bucketKeyAtom)) {
+        if (isTombstone<MKey>(bucketKeyAtom)) {
             tombstones++;
             continue;
         }
 
-        if (!isKeyEmpty(bucketKeyAtom)) {
-            Key bucketKey = KeyAtomizer::load(bucketKeyAtom);
+        // Ongoing move, switch to move mode
+        if (isMoving<MKey>(bucketKeyAtom)) {
+            --i;
+            continue;
+        }
 
-            if (bucketKey != key) {
-                // \todo if t->isResizing then move(newest(), bucket);
-                continue;
-            }
+        if (!isEmpty<MKey>(bucketKeyAtom)) {
+            Key bucketKey = KeyAtomizer::load(bucketKeyAtom);
+            if (bucketKey != key) continue;
         }
 
         // If the key in the bucket is a match we can skip this step. The
         // idea is if we have 2+ concurrent inserts for the same key then
         // the winner is determined when writing the value.
         else if (!bucket.key.compare_exchange_weak(bucketKeyAtom, keyAtom)) {
-            // Someone beat us; try again the same bucket again.
+            // Someone beat us; recheck the bucket to see if our key wasn't
+            // involved.
             --i;
             continue;
         }
 
 
+        // Our key is set; let's set our value.
+
         ValueAtom bucketValueAtom = bucket.value.load();
 
-        size_t dbg_loops = 0;
+        bool dbg_once = false;
 
-        // This loop can only start over once. The first pass is to avoid a
-        // pointless cas (an optimization). The second go around is to redo
-        // the same checks after we fail. This means that the cas is only
-        // executed once.
-        do {
+        // This loop can only start over once and the case only executed
+        // once. The first pass is to avoid a pointless cas (an
+        // optimization). The second go around is to redo the same checks after
+        // we fail.
+        while (true) {
+
+            // Beaten by a move or a delete operation. Keep probing.
+            if (isMoving<MValue>(bucketValueAtom)) break;
+            if (isTombstone<MValue>(bucketValueAtom)) break;
+
             // Another insert beat us to it.
-            if (!isValueEmpty(bucketValueAtom)) {
-                result = KeyExists;
-                break;
-            }
+            if (!isEmpty<mValue>(bucketValueAtom)) return false;
 
-            // Beaten by a move operation. Since we're interfering with a
-            // move, no point to keep on trying.
-            if (isValueTombstone(bucketValueAtom)) {
-                result = TryAgain;
-                break;
-            }
+            std::assert(!dbg_once);
+            dbg_once = true;
 
-            assert(!dbg_loops);
-            dbg_loops++;
-
-        } while (!bucket.key.compare_exchange_strong(bucketValueAtom, valueAtom));
-
-        if (!result) result = KeyInserted;
-        break;
+            if (bucket.key.compare_exchange_strong(bucketValueAtom, valueAtom))
+                return true;
+        }
     }
 
-    checkPolicies(t->capacity, i, tombstones);
-    return result;
+
+    // Check if we need to resize.
+    if (!t->isResizing()) {
+        if (tombstones >= TombstoneThreshold)
+            resizeImpl(t->capacity, true);
+        else resizeImpl(t->capacity * 2, false);
+    }
+
+    // The key is definetively not in this table, try the next.
+    return insertImpl(t->next.load(), hash, key, keyAtom, valueAtom);
 }
 
 
-
+/* Pretty straight forward and no really funky logic involved here. */
 template<typename K, typename V, typename H, typename MK, typename MV>
 auto
 Map<K,V,H,MK,MV>::
@@ -276,7 +317,7 @@ resizeImpl(size_t newCapacity, bool force = false) -> Table*
 {
     Table* oldTable;
 
-    /* Insert the new table in the chain. */
+    // 1. Insert the new table in the chain.
 
     std::unique_ptr<Table, MallocDeleter> safeNewTable;
     bool done;
@@ -296,21 +337,23 @@ resizeImpl(size_t newCapacity, bool force = false) -> Table*
 
         // Use a strong cas here to avoid calling newestTable unecessarily.
         done = safeNewTable->prev->compare_and_exchange_strong(
-                nullptr, safeNewTable.get())
-            } while(!done);
+                nullptr, safeNewTable.get());
+
+    } while(!done);
 
 
     Table* newTable = safeNewTable.release();
 
 
-    /* Move all the elements of the old table to the new table. */
+    // 2. Exhaustively move all the elements of the old table to the new table.
+    // Note that we'll receive help from the other threads as well.
 
     Table* dest = newTable;
     for (size_t i = 0; i < newCapacity; ++i)
         dest = moveBucket(dest, oldTable->buckets[i]);
 
 
-    /* Get rid of oldTable */
+    // 3. Get rid of oldTable.
 
     std::assert(oldTable->prev);
     std::assert(oldTable->prev->load() == oldTable);
@@ -324,5 +367,3 @@ resizeImpl(size_t newCapacity, bool force = false) -> Table*
 }
 
 } // lockless
-
-#endif // __lockless__map_tcc__
