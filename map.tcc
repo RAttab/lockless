@@ -241,7 +241,10 @@ insertImpl(
             continue;
         }
 
+        // 1. Set the key.
+
         KeyAtom bucketKeyAtom = bucket.key.load();
+
         if (isTombstone<MKey>(bucketKeyAtom)) {
             tombstones++;
             continue;
@@ -269,7 +272,7 @@ insertImpl(
         }
 
 
-        // Our key is set; let's set our value.
+        // 2. Set the value.
 
         ValueAtom bucketValueAtom = bucket.value.load();
 
