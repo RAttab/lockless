@@ -69,6 +69,17 @@ enum Policy
 /* MAP                                                                        */
 /******************************************************************************/
 
+template<typename K, typename V, typename H, typename MK, typename MV>
+bool
+Map<K,V,H,MK,MV>::
+doMoveBucket(Table* t, Bucket& bucket)
+{
+    if (!t->isResizing()) return false;
+    moveBucket(t->next.load(), bucket);
+    return true;
+}
+
+
 /* This op works in 3 phases to work around these 2 problems:
 
    1. An inserted KV pair must be in at least one table at all time.
@@ -223,18 +234,11 @@ insertImpl(
         const ValueAtom valueAtom,
         DeallocAtom dealloc)
 {
-    Table* dest = nullptr;
     size_t tombstones = 0;
 
     for (size_t i = 0; i < ProbeWindow; ++i) {
         Bucket& bucket = t->buckets[this->bucket(hash, i, t->capacity)];
-
-        // 0. Resize is underway so start moving KVs.
-        if (t->isResizing()) {
-            if (!dest) dest = t->next.load();
-            dest = moveBucket(dest, bucket);
-            continue;
-        }
+        if (doMoveBucket(t, bucket)) continue;
 
 
         // 1. Set the key.
@@ -304,16 +308,96 @@ insertImpl(
         }
     }
 
+    // The key is definetively not in this table, try the next.
+    doResize(t, tombstones);
+    return insertImpl(t->next.load(), hash, key, keyAtom, valueAtom, dealloc);
+}
 
-    // Check if we need to resize.
+
+/* Follows the same basic principles as insert: probe windows and move mode. The
+   action for each bucket state are fairly straightforward and explained in the
+   function itself.
+
+   Like insert this operate in two phases, read the key and read the value.
+ */
+template<typename K, typename V, typename H, typename MK, typename MV>
+auto
+Map<K,V,H,MK,MV>::
+findImpl(Table* t, const size_t hash, const Key& key)
+    -> std::pair<bool, Value>
+{
+    size_t tombstones = 0;
+
+    for (size_t i = 0; i < ProbeWindow; ++i) {
+        Bucket& bucket = t->buckets[this->bucket(hash, i, t->capacity)];
+        if (doMoveBucket(t, bucket)) continue;
+
+
+        // 1. Check the key
+
+        KeyAtom keyAtom = bucket.key.load();
+
+        if (isTombstone<MKey>(keyAtom)) {
+            tombstones++;
+            continue;
+        }
+
+        if (isEmpty<MKey>(keyAtom))
+            return std::make_pair(false, Value());
+
+        // Retry the bucket to help out with the move.
+        if (isMoving<MKey>(keyAtom)) {
+            --i;
+            continue;
+        }
+
+        Key bucketKey = KeyAtomizer::load(keyAtom);
+        if (bucketKey != key) continue;
+
+
+        // 2. Check the value.
+
+        ValueAtom valueAtom = bucket.value.load();
+
+        // We might be in the middle of a move op so try the bucket again so
+        // that we'll eventually prob the next table if there's one.
+        if (isTombstone<MValue>(valueAtom)) {
+            --i;
+            continue;
+        }
+
+        // The insert op isn't finished yet so we consider that the key isn't in
+        // the table.
+        if (isEmpty<MValue>(valueAtom))
+            return std::make_pair(false, Value());
+
+        // In the middle of a move but we can still recover the value so just
+        // play it greedy and don't help out with the move.
+        if (isMoving<MValue>(valueAtom))
+            valueAtom = clearMarks(valueAtom);
+
+        Value value = ValueAtomizer::load(valueAtom);
+        return make_pair(true, value);
+    }
+
+
+    // The key is definetively not in this table, try the next.
+    doResize(t, tombstones);
+    return findImpl(t->next.load(), hash, key);
+}
+
+
+/* Implements the resize policy for the table. */
+template<typename K, typename V, typename H, typename MK, typename MV>
+void
+Map<K,V,H,MK,MV>::
+doResize(Table* t, size_t tombstones)
+{
     if (!t->isResizing()) {
         if (tombstones >= TombstoneThreshold)
             resizeImpl(t->capacity, true);
         else resizeImpl(t->capacity * 2, false);
     }
-
-    // The key is definetively not in this table, try the next.
-    return insertImpl(t->next.load(), hash, key, keyAtom, valueAtom, dealloc);
 }
 
 

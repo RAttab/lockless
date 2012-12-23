@@ -54,26 +54,58 @@ private:
 
 public:
 
+    /* Blah
+
+       Exception Safety: Only throws on calls to new.
+     */
     Map(size_t initialSize = 0, const Hash& hashFn = Hash()) :
         hashFn(hashFn), size(0), table(0),
     {
         resize(adjustCapacity(initialSize));
     }
 
+    /* Blah
+
+       Thread Safety: Completely lock-free and wait-free.
+
+       Exception Safety: Does not throw.
+     */
     size_t size() const { return size.load(); }
     size_t capacity() const { return newestTable()->capacity; }
 
+    /* Blah
+
+       Thread safety: Issues a single call to malloc which could lock.
+           Everything else is lock-free and wait-free.
+
+       Exception Safety: Only throws on calls the new and delete.
+     */
     void resize(size_t capacity)
     {
         RcuGuard guard(rcu);
         resizeImpl(adjustCapacity(capacity));
     }
 
+    /* Blah
+
+       Thread safety: Issues calls to malloc, new and delete which could lock.
+           Everything else is lock-free and wait-free.
+
+       Exception Safety: Can only throw
+     */
     std::pair<bool, Value> find(const Key& key)
     {
         RcuGuard guard(rcu);
+        return findImpl(table.load(), hashFn(key), key);
     }
 
+    /* Blah
+
+       Thread safety: Issues calls to malloc, new and delete which could lock.
+           Everything else is lock-free and wait-free.
+
+       Exception Safety: Can only throw
+     */
     bool insert(const Key& key, const Value& value)
     {
         RcuGuard guard(rcu);
@@ -161,7 +193,18 @@ private:
         rcu.defer([=] { deallocAtomNow(state, keyAtom, valueAtom); });
     }
 
+
+    // map.tcc functions.
+
+    bool doMoveMode(Table* t, Bucket& bucket);
     Table* moveBucket(Table* dest, Bucket& src);
+
+    void doResize(Table* t, size_t tombstones);
+    Table* resizeImpl(size_t newCapacity, bool force = false);
+
+    std::pair<bool, Value> findImpl(
+            Table* t, const size_t hash, const Key& key);
+
     bool insertImpl(
             Table* t,
             const size_t hash,
@@ -170,7 +213,6 @@ private:
             const ValueAtom valueAtom,
             DeallocAtom dealloc);
 
-    Table* resizeImpl(size_t newCapacity, bool force = false);
 
     Hash hashFn;
     Rcu rcu;
