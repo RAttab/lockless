@@ -160,16 +160,10 @@ moveBucket(Table* dest, Bucket& src) -> Table*
     Key key = KeyAtomizer::load(keyAtom);
     size_t hash = hashFn(key);
 
-    while (true) {
-        InsertResult result = insertImpl(dest, hash, key, keyAtom, valueAtom);
-
-        if (result == KeyInserted) break;
-        std::assert(result == TryAgain); // != KeyExists.
-
-        // dest is resizing so move on to the next table.
-        dest = dest.next.load();
-        std::assert(dest);
-    }
+    // Regardless of the return value of this function, the KV will have been
+    // moved to a new table. Either because we did it or because another thread
+    // beat us to it. In either cases, the KV was moved so we're happy.
+    insertImpl(dest, hash, key, keyAtom, valueAtom, DeallocNone);
 
 
     // 3. Kill the values in the src table.
@@ -226,7 +220,8 @@ insertImpl(
         const Key& key,
         const size_t hash,
         const KeyAtom keyAtom,
-        const ValueAtom valueAtom)
+        const ValueAtom valueAtom,
+        DeallocAtom dealloc)
 {
     Table* dest = nullptr;
     size_t tombstones = 0;
@@ -234,12 +229,13 @@ insertImpl(
     for (size_t i = 0; i < ProbeWindow; ++i) {
         Bucket& bucket = t->buckets[this->bucket(hash, i, t->capacity)];
 
-        // Resize is underway so start moving KVs.
+        // 0. Resize is underway so start moving KVs.
         if (t->isResizing()) {
             if (!dest) dest = t->next.load();
             dest = moveBucket(dest, bucket);
             continue;
         }
+
 
         // 1. Set the key.
 
@@ -271,6 +267,10 @@ insertImpl(
             continue;
         }
 
+        // If we inserted our key in the table then don't dealloc it. Even if
+        // the call fails!
+        else dealloc &= ~DeallocKey;
+
 
         // 2. Set the value.
 
@@ -289,13 +289,18 @@ insertImpl(
             if (isTombstone<MValue>(bucketValueAtom)) break;
 
             // Another insert beat us to it.
-            if (!isEmpty<mValue>(bucketValueAtom)) return false;
+            if (!isEmpty<mValue>(bucketValueAtom)) {
+                deallocAtomNow(dealloc, keyAtom, valueAtom);
+                return false;
+            }
 
             std::assert(!dbg_once);
             dbg_once = true;
 
-            if (bucket.key.compare_exchange_strong(bucketValueAtom, valueAtom))
+            if (bucket.key.compare_exchange_strong(bucketValueAtom, valueAtom)){
+                deallocAtomNow(dealloc & ~DeallocValue, keyAtom, valueAtom);
                 return true;
+            }
         }
     }
 
@@ -308,7 +313,7 @@ insertImpl(
     }
 
     // The key is definetively not in this table, try the next.
-    return insertImpl(t->next.load(), hash, key, keyAtom, valueAtom);
+    return insertImpl(t->next.load(), hash, key, keyAtom, valueAtom, dealloc);
 }
 
 

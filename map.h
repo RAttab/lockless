@@ -43,6 +43,15 @@ private:
     typedef details::Atomizer<Value> ValueAtomizer;
     typedef ValueAtomizer::type ValueAtom;
 
+    enum DeallocAtom
+    {
+        DeallocKey = 1,
+        DeallocValue = 2,
+
+        DeallocNone = 0,
+        DeallocBoth = DeallocKey | DeallocValue,
+    };
+
 public:
 
     Map(size_t initialSize = 0, const Hash& hashFn = Hash()) :
@@ -73,7 +82,8 @@ public:
         KeyAtom keyAtom = KeyAtomizer::alloc(key);
         ValueAtom valueAtom = ValueAtomizer::alloc(value);
 
-        return insertImpl(table.load(), hash, key, keyAtom, valueAtom);
+        return insertImpl(
+                table.load(), hash, key, keyAtom, valueAtom, DeallocBoth);
     }
 
 private:
@@ -140,13 +150,25 @@ private:
         return (hash + i) & (capacity - 1);
     }
 
+    void deallocAtomNow(DeallocAtom state, KeyAtom keyAtom, ValueAtom valueAtom)
+    {
+        if (state & DeallocKey) KeyAtomizer::dealloc(keyAtom);
+        if (state & DeallocValue) ValueAtomizer::dealloc(valueAtom);
+    }
+
+    void deallocAtomDefer(DeallocAtom state, KeyAtom keyAtom, ValueAtom valueAtom)
+    {
+        rcu.defer([=] { deallocAtomNow(state, keyAtom, valueAtom); });
+    }
+
     Table* moveBucket(Table* dest, Bucket& src);
     bool insertImpl(
             Table* t,
             const size_t hash,
             const Key& key,
             const KeyAtom keyAtom,
-            const ValueAtom valueAtom);
+            const ValueAtom valueAtom,
+            DeallocAtom dealloc);
 
     Table* resizeImpl(size_t newCapacity, bool force = false);
 
