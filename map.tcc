@@ -4,7 +4,56 @@
 
     Implementation details of the Map template
 
-*/
+    A bucket operates a bit like a state machine with 4 states for the key and
+    the same 4 states for the value:
+
+    - isEmpty: Nothing has been placed in this bucket's key/value.
+    - isValue: A user's key/value has been placed in this bucket.
+    - isMoving: The key/value is currently being moved and modifications to it
+      are currently locked.
+    - isTombstone: When applied to either the key or the value, signifies that
+      the bucket is dead and nothing can be moved to it anymore.
+
+    The transition between these states are as follow:
+
+
+        isEmpty *------------  Move
+                |            \
+                |            |
+                | Insert     |
+                |            |
+                V            |
+        isValue *----------- | Delete
+                |           \|
+                |            |
+                | Move       |
+                |            |
+                V            V
+       isMoving *----------> * isTombstone
+                     Move
+
+    Important thing to not is that there are no transitions out of tombstone.
+    This ensures that we can support the remove operation without having to
+    rehash the values that are in our probe window. The downside is that we
+    eventually have to clean up the tombstoned values. This is accomplished by
+    by triggering a resize of the same capacity which will ignore the tombstoned
+    buckets when transfering the values.
+
+    Now the state machine gets quite a bit more complicated if we combine the
+    state of both the key and the value. I won't even try to make an ASCII
+    diagram of that but the involved operations below (moveBucket, insertImpl,
+    findImpl, replaceImpl, removeImpl) should document all the possibilities
+    fairly well.
+
+    The doc for moveBucket and insertImpl also introduce the idea behind the
+    probe window and how it allows us to determine in constant time whether a
+    value is in a table or not. Note that there is no linear worst-case time for
+    this hash table. The worst-case is actually determined by how many chained
+    table we could potentially probe and, theorically, this would be log n. On
+    the practical side, the number of chained table will depend on how stable
+    the size is and the frequency of remove operations. I have yet to test this
+    but chances are that it will rarely go beyond 2-3 chained tables.
+ */
 
 namespace lockless {
 
@@ -152,13 +201,13 @@ moveBucket(Table* dest, Bucket& src) -> Table*
 
     // If we're dealing with a partial insert just tombstone the whole thing.
     if (isMoving<MKey>(keyAtom) && isTombstone<MValue>(valueAtom))
-        goto out; // Let the velociraptor strike me!
+        goto doTombstone; // Let the velociraptor strike me!
 
     // We only check value because that's the last one to be written.
     if (isTombstone<MValue>(valueAtom)) return dest;
 
     // The move is done so skip to step 3. to help the cleanup.
-    if (isTombstone<MKey>(keyAtom)) goto out;
+    if (isTombstone<MKey>(keyAtom)) goto doTombstome;
 
     std::assert(isMoving<MKey>(keyAtom) && isMonving<MValue>(valueAtom));
 
@@ -179,7 +228,7 @@ moveBucket(Table* dest, Bucket& src) -> Table*
 
     // 3. Kill the values in the src table.
 
-  out:
+  doTombstone:
 
     // The only possible transition out of the moving state is to tombstone so
     // we don't need any RMW ops here.
@@ -199,7 +248,7 @@ moveBucket(Table* dest, Bucket& src) -> Table*
    Otherwise we proceed to insert our KV pair in 2 phases: we first try to
    insert the key and then the value. The key isn't officially inserted until
    both these operations are completed which means that even if the key is set,
-   the operation could still abort.
+   the operation could still fail.
 
    If we exhaust our probing window then one of 3 scenarios could have occured:
 
@@ -318,7 +367,11 @@ insertImpl(
    action for each bucket state are fairly straightforward and explained in the
    function itself.
 
-   Like insert this operate in two phases, read the key and read the value.
+   Like insert this operate in two phases: read the key and read the value.
+   Since we may compete with an insert for the very same key, we only consider
+   that a KV pair has been inserted if both the key and the value are set in the
+   bucket. Same will be true for all ops that must first find the key before
+   modifying it.
  */
 template<typename K, typename V, typename H, typename MK, typename MV>
 auto
@@ -371,8 +424,8 @@ findImpl(Table* t, const size_t hash, const Key& key)
         if (isEmpty<MValue>(valueAtom))
             return std::make_pair(false, Value());
 
-        // In the middle of a move but we can still recover the value so just
-        // play it greedy and don't help out with the move.
+        // In the middle of a move but since we don't need to modify the value
+        // we can just play it greedy and return right away.
         if (isMoving<MValue>(valueAtom))
             valueAtom = clearMarks(valueAtom);
 
