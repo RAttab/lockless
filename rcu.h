@@ -128,13 +128,14 @@ struct Rcu
         DeferEntry* entry = new DeferEntry(defer);
 
 
-        /* Trying to push add an entry that is not current can will lead to a
-           race with the doDeferred function. In a nutshell, we could read
-           entries in the list that have been deleted.
+        /* Defered entries can only be executed and deleted when they are in
+           other's list and other's counter is at 0. We can therfor avoid races
+           with doDefer() by adding our entry in current's defer list.
 
-           This is prevented by incrementing the epoch's count on current which
-           prevents current from being swaped to other. So all in all we're
-           safe.
+           There's still the issue of current being swaped with other while
+           we're doing our push. If this happens we can prevent the list from
+           being deleted by incrementing current's counter and checking to see
+           whether we're still in current after the counter was incremented.
         */
         Epoch* oldCurrent;
         while (true) {
