@@ -196,6 +196,7 @@ moveBucket(Table* dest, Bucket& src) -> Table*
         if (isEmpty<MValue>(oldValueAtom))
                 valueAtom = setTombstone<MValue>(oldValueAtom);
         else keyAtom = setMoving<MValue>(oldValueAtom);
+
     } while (!src.value.compare_exchange_weak(oldValueAtom, valueAtom));
 
 
@@ -437,6 +438,88 @@ findImpl(Table* t, const size_t hash, const Key& key)
     // The key is definetively not in this table, try the next.
     doResize(t, tombstones);
     return findImpl(t->next.load(), hash, key);
+}
+
+
+template<typename K, typename V, typename H, typename MK, typename MV>
+bool
+Map<K,V,H,MK,MV>::
+compareReplaceImpl(
+        Table* t,
+        const size_t hash,
+        const Key& key,
+        Value& expected,
+        const ValueAtom desired)
+{
+    size_t tombstones = 0;
+
+    auto doDealloc = [&] {  };
+
+    for (size_t i = 0; i < ProbeWindow; ++i) {
+        Bucket& bucket = t->buckets[this->bucket(hash, i, t->capacity)];
+        if (doMoveBucket(t, bucket)) continue;
+
+
+        // 1. Find the key
+
+        KeyAtom keyAtom = bucket.key.load();
+
+        if (isTombstone<MKey>(keyAtom)) {
+            tombstones++;
+            continue;
+        }
+        if (isMoving<MKey>(keyAtom)) {
+            --i;
+            continue;
+        }
+        if (isEmpty<MKey>(keyAtom)) {
+            ValueAtomizer::dealloc(desired);
+            return false;
+        }
+
+        Key bucketKey = KeyAtomizer::load(keyAtom);
+        if (key != bucketKey) continue;
+
+
+        // 2. Replace the value.
+
+        ValueAtom valueAtom = bucket.value.load();
+
+        while (true) {
+
+            // We may be in the middle of a move so try the bucket again.
+            if (isTombstone<MValue>(valueAtom) || isMoving<MValue>(valueAtom)) {
+                --i;
+                break;
+            }
+
+            // Value not fully inserted yet; just bail.
+            if (isEmpty<MValue>(valueAtom)) {
+                ValueAtomizer::dealloc(desired);
+                return false;
+            }
+
+
+            // make the comparaison.
+            Value bucketValue = ValueAtomizer::load(valueAtom);
+            if (expected != bucketValue) {
+                ValueAtomizer::dealloc(desired);
+                expected = bucketValue;
+                return false;
+            }
+
+            // make the exchange.
+            if (bucket.value.compare_exchange_weak(valueAtom, desired)) {
+                // The value comes from the table so defer the dealloc.
+                rcu.defer([=] { ValueAtomizer::dealloc(valueAtom); };
+                return true;
+            }
+        }
+    }
+
+    // The key is definetively not in this table, try the next.
+    doResize(t, tombstones);
+    return compareAndReplaceImpl(t->next.load(), hash, key, desired);
 }
 
 

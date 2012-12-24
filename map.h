@@ -78,7 +78,7 @@ public:
        Thread safety: Issues a single call to malloc which could lock.
            Everything else is lock-free and wait-free.
 
-       Exception Safety: Only throws on calls the new and delete.
+       Exception Safety: Can only throw if malloc, new or delete throws.
      */
     void resize(size_t capacity)
     {
@@ -91,7 +91,7 @@ public:
        Thread safety: Issues calls to malloc, new and delete which could lock.
            Everything else is lock-free and wait-free.
 
-       Exception Safety: Can only throw
+       Exception Safety: Can only throw if new throws.
      */
     std::pair<bool, Value> find(const Key& key)
     {
@@ -104,7 +104,7 @@ public:
        Thread safety: Issues calls to malloc, new and delete which could lock.
            Everything else is lock-free and wait-free.
 
-       Exception Safety: Can only throw
+       Exception Safety: Can only throw if malloc, new or delete throws.
      */
     bool insert(const Key& key, const Value& value)
     {
@@ -116,6 +116,23 @@ public:
 
         return insertImpl(
                 table.load(), hash, key, keyAtom, valueAtom, DeallocBoth);
+    }
+
+    /* Blah. Same interface as atomic<T>.compare_exchange()
+
+       Thread safety: Issues calls to malloc, new and delete which could lock.
+           Everything else is lock-free and wait-free.
+
+       Exception Safety: Can only throw if malloc, new or delete throws.
+     */
+    bool compareExchange(const Key& key, Value& expected, const Value& desired)
+    {
+        RcuGuard guard(rcu);
+
+        size_t hash = hashFn(key);
+        ValueAtom valueAtom = ValueAtomizer::alloc(desired);
+
+        return compareExchangeImpl(table.load(), hash, key, expected, valueAtom);
     }
 
 private:
@@ -213,6 +230,12 @@ private:
             const ValueAtom valueAtom,
             DeallocAtom dealloc);
 
+    bool compareReplaceImpl(
+            Table* t,
+            const size_t hash,
+            const Key& key,
+            Value& expected,
+            const ValueAtom desired);
 
     Hash hashFn;
     Rcu rcu;
