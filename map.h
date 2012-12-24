@@ -114,8 +114,11 @@ public:
         KeyAtom keyAtom = KeyAtomizer::alloc(key);
         ValueAtom valueAtom = ValueAtomizer::alloc(value);
 
-        return insertImpl(
+        bool success = insertImpl(
                 table.load(), hash, key, keyAtom, valueAtom, DeallocBoth);
+        if (success) size++;
+
+        return success;
     }
 
     /* Blah. Same interface as atomic<T>.compare_exchange()
@@ -146,7 +149,11 @@ public:
     std::pair<bool, Value> remove(const Key& key)
     {
         RcuGuard guard(rcu);
-        return removeImpl(table.load(), hashFn(key), key);
+
+        auto result = removeImpl(table.load(), hashFn(key), key);
+        if (result.first) size--;
+
+        return result;
     }
 
 private:
