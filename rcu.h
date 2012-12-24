@@ -36,7 +36,7 @@ struct Rcu
 
     struct Epoch
     {
-        std::atomic<uint64_t> count;
+        std::atomic<size_t> count;
         std::atomic<DeferEntry*> deferList;
 
         Epoch(RCU* parent) :

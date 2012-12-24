@@ -24,7 +24,7 @@ template<typename T> struct MagicValue {};
 
 /* Grab the most-significant bits which are unlikely to be used. */
 template<>
-struct MagicValue<uint64_t>
+struct MagicValue<size_t>
 {
     static T mask0 = 1ULL << 63;
     static T mask1 = 1ULL << 62;
@@ -48,29 +48,6 @@ struct MagicValue<char*>
     static T* mask0 = reinterpret_cast<T*>(1) << (sizeof(T*) * 8 - 1);
     static T* mask1 = reinterpret_cast<T*>(1) << (sizeof(T*) * 8 - 2);
 };
-
-
-/******************************************************************************/
-/* IS MAGIC VALUE                                                             */
-/******************************************************************************/
-
-template<typename T, typename Magic = MagicValue<T> >
-bool isMagicValue0(T value)
-{
-    return value & Magic::mask0;
-}
-
-template<typename T, typename Magic = MagicValue<T> >
-bool isMagicValue1(T value)
-{
-    return value & Magic::mask1;
-}
-
-template<typename T, typename Magic = MagicValue<T> >
-bool isMagicValue(T value)
-{
-    return isMagicValue0<T, Magic>(value) || isMagicValue1<T, Magic>(value);
-}
 
 } // lockless
 

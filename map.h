@@ -200,7 +200,7 @@ private:
     // \todo could do better with a nlz bit op.
     size_t adjustCapacity(size_t newCapacity)
     {
-        uint64_t capacity = 1ULL << 8;
+        size_t capacity = 1ULL << 8;
         while(capacity < newCapacity)
             capacity *= 2;
     }
@@ -264,7 +264,7 @@ private:
 
     Hash hashFn;
     Rcu rcu;
-    std::atomic<uint64_t> size;
+    std::atomic<size_t> size;
     std::atomic<Table*> table;
 };
 

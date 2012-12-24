@@ -90,7 +90,7 @@ Atom setTombstone(Atom atom)
 template<typename Magic, typename Atom>
 bool isMoving(Atom atom)
 {
-    uint64_t mask = Magic:: mask0 | Magic::mask1;
+    Atom::type mask = Magic::mask0 | Magic::mask1;
     return atom & mask == mask;
 }
 

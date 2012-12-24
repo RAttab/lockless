@@ -23,7 +23,7 @@ namespace details {
 template<typename T>
 struct IsAtomic
 {
-    enum { value = sizeof(T) <= sizeof(uint64_t) };
+    enum { value = sizeof(T) <= sizeof(size_t) };
 };
 
 
@@ -37,7 +37,7 @@ struct Atomizer {};
 template<typename T>
 struct Atomizer<T, true>
 {
-    typedef uint64_t type;
+    typedef size_t type;
 
     static type alloc(T value)
     {
@@ -69,7 +69,7 @@ private:
     {
         union {
             T value;
-            uint64_t atom;
+            type atom;
         };
     };
 };
