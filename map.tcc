@@ -166,6 +166,8 @@ auto
 Map<K,V,H,MK,MV>::
 moveBucket(Table* dest, Bucket& src) -> Table*
 {
+    using namespace details;
+
     // 1. Read the KV pair in src and prepare them for moving.
 
     KeyAtom oldKeyAtom = src.key.load();
@@ -282,6 +284,8 @@ insertImpl(
         const ValueAtom valueAtom,
         DeallocAtom dealloc)
 {
+    using namespace details;
+
     size_t tombstones = 0;
 
     for (size_t i = 0; i < ProbeWindow; ++i) {
@@ -382,6 +386,8 @@ Map<K,V,H,MK,MV>::
 findImpl(Table* t, const size_t hash, const Key& key)
     -> std::pair<bool, Value>
 {
+    using namespace details;
+
     size_t tombstones = 0;
 
     for (size_t i = 0; i < ProbeWindow; ++i) {
@@ -454,6 +460,8 @@ compareReplaceImpl(
         Value& expected,
         const ValueAtom desired)
 {
+    using namespace details;
+
     size_t tombstones = 0;
 
     for (size_t i = 0; i < ProbeWindow; ++i) {
@@ -535,6 +543,8 @@ Map<K,V,H,MK,MV>::
 removeImpl(Table* t, const size_t hash, const Key& key)
     -> std::pair<bool, Value>
 {
+    using namespace details;
+
     size_t tombstones = 0;
 
     for (size_t i = 0; i < ProbeWindow; ++i) {
@@ -607,14 +617,19 @@ Map<K,V,H,MK,MV>::
 doResize(Table* t, size_t tombstones)
 {
     if (!t->isResizing()) {
-        if (tombstones >= TombstoneThreshold)
+        if (tombstones >= details::TombstoneThreshold)
             resizeImpl(t->capacity, true);
         else resizeImpl(t->capacity * 2, false);
     }
 }
 
 
-/* Pretty straight forward and no really funky logic involved here. */
+/* Pretty straight forward and no really funky logic involved here. 
+
+   \bug Should be aware of the table where the resize request originated.
+        Otherwise 2+ threads that want to force a resize could chain two tables
+        instead of just one.
+ */
 template<typename K, typename V, typename H, typename MK, typename MV>
 auto
 Map<K,V,H,MK,MV>::
