@@ -215,11 +215,9 @@ moveBucket(Table* dest, Bucket& src) -> Table*
 
     // 2. Move the value to the dest table.
 
-    keyAtom = clearMarks(keyAtom):
-    valueAtom = clearMarks(valueAtom):
-
-    Key key = KeyAtomizer::load(keyAtom);
-    size_t hash = hashFn(key);
+    keyAtom = clearMarks(keyAtom);
+    valueAtom = clearMarks(valueAtom);
+    size_t hash = hashFn(KeyAtomizer::load(keyAtom));
 
     // Regardless of the return value of this function, the KV will have been
     // moved to a new table. Either because we did it or because another thread
@@ -307,8 +305,8 @@ insertImpl(
         }
 
         if (!isEmpty<MKey>(bucketKeyAtom)) {
-            Key bucketKey = KeyAtomizer::load(bucketKeyAtom);
-            if (bucketKey != key) continue;
+            if (key != KeyAtomizer::load(bucketKeyAtom))
+                continue;
         }
 
         // If the key in the bucket is a match we can skip this step. The
@@ -338,9 +336,13 @@ insertImpl(
         // we fail.
         while (true) {
 
-            // Beaten by a move or a delete operation. Keep probing.
-            if (isMoving<MValue>(bucketValueAtom)) break;
-            if (isTombstone<MValue>(bucketValueAtom)) break;
+            // Beaten by a move or a delete operation. Retry the bucket.
+            if (isMoving<MValue>(bucketValueAtom) ||
+                    isTombstone<MValue>(bucketValueAtom))
+            {
+                --i;
+                break;
+            }
 
             // Another insert beat us to it.
             if (!isEmpty<mValue>(bucketValueAtom)) {
@@ -405,8 +407,7 @@ findImpl(Table* t, const size_t hash, const Key& key)
             continue;
         }
 
-        Key bucketKey = KeyAtomizer::load(keyAtom);
-        if (bucketKey != key) continue;
+        if (key != KeyAtomizer::load(keyAtom)) continue;
 
 
         // 2. Check the value.
@@ -430,8 +431,7 @@ findImpl(Table* t, const size_t hash, const Key& key)
         if (isMoving<MValue>(valueAtom))
             valueAtom = clearMarks(valueAtom);
 
-        Value value = ValueAtomizer::load(valueAtom);
-        return make_pair(true, value);
+        return make_pair(true, ValueAtomizer::load(valueAtom));
     }
 
 
@@ -441,6 +441,9 @@ findImpl(Table* t, const size_t hash, const Key& key)
 }
 
 
+/* Straight forward implementation. Find the key, compare and exchange the
+   value.
+ */
 template<typename K, typename V, typename H, typename MK, typename MV>
 bool
 Map<K,V,H,MK,MV>::
@@ -452,8 +455,6 @@ compareReplaceImpl(
         const ValueAtom desired)
 {
     size_t tombstones = 0;
-
-    auto doDealloc = [&] {  };
 
     for (size_t i = 0; i < ProbeWindow; ++i) {
         Bucket& bucket = t->buckets[this->bucket(hash, i, t->capacity)];
@@ -477,8 +478,7 @@ compareReplaceImpl(
             return false;
         }
 
-        Key bucketKey = KeyAtomizer::load(keyAtom);
-        if (key != bucketKey) continue;
+        if (key != KeyAtomizer::load(keyAtom)) continue;
 
 
         // 2. Replace the value.
@@ -499,7 +499,6 @@ compareReplaceImpl(
                 return false;
             }
 
-
             // make the comparaison.
             Value bucketValue = ValueAtomizer::load(valueAtom);
             if (expected != bucketValue) {
@@ -511,7 +510,7 @@ compareReplaceImpl(
             // make the exchange.
             if (bucket.value.compare_exchange_weak(valueAtom, desired)) {
                 // The value comes from the table so defer the dealloc.
-                rcu.defer([=] { ValueAtomizer::dealloc(valueAtom); };
+                rcu.defer([=] { ValueAtomizer::dealloc(valueAtom); });
                 return true;
             }
         }
@@ -519,7 +518,85 @@ compareReplaceImpl(
 
     // The key is definetively not in this table, try the next.
     doResize(t, tombstones);
-    return compareAndReplaceImpl(t->next.load(), hash, key, desired);
+    return compareAndReplaceImpl(t->next.load(), hash, key, expected, desired);
+}
+
+/* This op is a little more tricky and proceeds in 3 phases: find the key, make
+   sure the value is also present and tombstone the KV pair starting with the
+   key.
+
+   The tombstone process has to start with the key but we can't tombstone before
+   we're sure that the KV pair was fully inserted. We also have to be careful
+   with replace op that may change the value after we've tombstoned the key.
+ */
+template<typename K, typename V, typename H, typename MK, typename MV>
+auto
+Map<K,V,H,MK,MV>::
+removeImpl(Table* t, const size_t hash, const Key& key)
+    -> std::pair<bool, Value>
+{
+    size_t tombstones = 0;
+
+    for (size_t i = 0; i < ProbeWindow; ++i) {
+        Bucket& bucket = t->buckets[this->bucket(hash, i, t->capacity)];
+        if (doMoveBucket(t, bucket)) continue;
+
+
+        // 1. Find the key
+
+        KeyAtom keyAtom = bucket.key.load();
+
+        if (isTombstone<MKey>(keyAtom)) {
+            tombstones++;
+            continue;
+        }
+        if (isMoving<MKey>(keyAtom)) {
+            --i;
+            continue;
+        }
+        if (isEmpty<MKey>(keyAtom)) return make_pair<false, Value()>;
+
+        if (key != KeyAtomizer::load(keyAtom)) continue;
+
+
+        // 2. Check the value
+
+        ValueAtom valueAtom = bucket.value.load();
+
+        // We may be in the middle of a move so try the bucket again.
+        if (isTombstone<MValue>(valueAtom) || isMoving<MValue>(valueAtom)) {
+            --i;
+            continue;
+        }
+        // Value not fully inserted yet; just bail.
+        if (isEmpty<MValue>(valueAtom)) return make_pair(false, Value());
+
+
+        // 3. Tombstone the bucket
+
+        // Tombstone the key. If we're in a race with another op then just try
+        // the bucket again.
+        KeyAtom newKeyAtom = setTombstone<MKey>(keyAtom);
+        if (!bucket.key.compare_exchange(keyAtom, newKeyAtom)) {
+            --i;
+            continue;
+        }
+
+        // Reload the value from the bucket in case there's a lagging replace
+        // op. Also prevent any further replace op by tombstoning the value.
+        ValueAtom newValueAtom = setTombstone<MValue>(valueAtom);
+        valueAtom = bucket.value.exchange(newValueAtom);
+
+        // The atoms come from the table so defer the delete in case someone's
+        // still them.
+        deallocAtomDefer(DeallocBoth, keyAtom, valueAtom);
+
+        return make_pair(true, ValueAtomizer::load(valueAtom));
+    }
+
+    // The key is definetively not in this table, try the next.
+    doResize(t, tombstones);
+    return removeImpl(t->next.load(), hash, key);
 }
 
 

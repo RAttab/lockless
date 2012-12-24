@@ -135,6 +135,20 @@ public:
         return compareExchangeImpl(table.load(), hash, key, expected, valueAtom);
     }
 
+
+    /* Blah.
+
+       Thread safety: Issues calls to malloc, new and delete which could lock.
+           Everything else is lock-free and wait-free.
+
+       Exception Safety: Can only throw if malloc, new or delete throws.
+     */
+    std::pair<bool, Value> remove(const Key& key)
+    {
+        RcuGuard guard(rcu);
+        return removeImpl(table.load(), hashFn(key), key);
+    }
+
 private:
 
     struct Bucket
@@ -236,6 +250,10 @@ private:
             const Key& key,
             Value& expected,
             const ValueAtom desired);
+
+    std::pair<bool, Value> removeImpl(
+            Table* t, const size_t hash, const Key& key);
+
 
     Hash hashFn;
     Rcu rcu;
