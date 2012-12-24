@@ -162,9 +162,9 @@ doMoveBucket(Table* t, Bucket& bucket)
    Fun!
  */
 template<typename K, typename V, typename H, typename MK, typename MV>
-auto
+void
 Map<K,V,H,MK,MV>::
-moveBucket(Table* dest, Bucket& src) -> Table*
+moveBucket(Table* dest, Bucket& src)
 {
     using namespace details;
 
@@ -624,18 +624,13 @@ doResize(Table* t, size_t tombstones)
 }
 
 
-/* Pretty straight forward and no really funky logic involved here. 
-
-   \bug Should be aware of the table where the resize request originated.
-        Otherwise 2+ threads that want to force a resize could chain two tables
-        instead of just one.
- */
+/* Pretty straight forward and no really funky logic involved here. */
 template<typename K, typename V, typename H, typename MK, typename MV>
 auto
 Map<K,V,H,MK,MV>::
 resizeImpl(size_t newCapacity, bool force = false) -> Table*
 {
-    Table* oldTable;
+    Table* oldTable = table.load();
 
     // 1. Insert the new table in the chain.
 
@@ -643,11 +638,18 @@ resizeImpl(size_t newCapacity, bool force = false) -> Table*
     bool done;
 
     do {
-        oldTable = newestTable();
-
         if (oldTable) {
             if (newCapacity < oldTable->capacity) return;
-            if (!force && newCapacity == oldTable->capacity) return;
+            if (newCapcity == oldTable->capacity) {
+                if (!force) return;
+                // Looking do to a cleanup but someone else is already doing it.
+                if (oldTable->isResizing()) return;
+            }
+
+            if (oldTable->isResizing()) {
+                oldTable = oldTable->next.load();
+                continue;
+            }
         }
 
         if (!safeNewTable)
@@ -655,12 +657,10 @@ resizeImpl(size_t newCapacity, bool force = false) -> Table*
 
         safeNewTable->prev = oldTable ? &oldTable->next : &table;
 
-        // Use a strong cas here to avoid calling newestTable unecessarily.
-        done = safeNewTable->prev->compare_and_exchange_strong(
+        done = safeNewTable->prev->compare_and_exchange_weak(
                 nullptr, safeNewTable.get());
 
     } while(!done);
-
 
     Table* newTable = safeNewTable.release();
 
@@ -668,9 +668,8 @@ resizeImpl(size_t newCapacity, bool force = false) -> Table*
     // 2. Exhaustively move all the elements of the old table to the new table.
     // Note that we'll receive help from the other threads as well.
 
-    Table* dest = newTable;
     for (size_t i = 0; i < newCapacity; ++i)
-        dest = moveBucket(dest, oldTable->buckets[i]);
+        moveBucket(newTable, oldTable->buckets[i]);
 
 
     // 3. Get rid of oldTable.
@@ -678,8 +677,8 @@ resizeImpl(size_t newCapacity, bool force = false) -> Table*
     std::assert(oldTable->prev);
     std::assert(oldTable->prev->load() == oldTable);
 
-    // Don't store newTable because it might have been resized and removed
-    // from the list.
+    // Remove oldTable from the list. We can't use newTable to do this because
+    // it to might have been resized and removed from the list.
     oldTable->prev.store(oldTable->next.load());
     rcu.defer([=] { std::free(oldTable); });
 
