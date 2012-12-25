@@ -173,7 +173,6 @@ struct Log
     }
 
 private:
-    bool sampleTime;
     std::atomic<size_t> index;
     std::array<std::atomic<LogEntry*>, Size> log;
 };
@@ -194,6 +193,18 @@ void logToStream(const Log& log, const std::ostream& stream = std::cerr)
         stream << entry.print() << "\n";
 
     stream.flush();
+}
+
+/* Merge multiple logs together through template magicery. */
+template<typename LogBase, typename LogOther, typename LogPack>
+Log logMerge(const LogBase& base, const LogOther& other, const LogPack& pack...)
+{
+    return logMerge(LogBase(base, other), pack...);
+}
+template<typename LogBase, typename LogOther>
+Log logMerge(const LogBase& base, const LogOther& other)
+{
+    return LogBase(base, other);
 }
 
 } // lockless
