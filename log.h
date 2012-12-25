@@ -9,13 +9,26 @@
 #ifndef __lockless__log_h__
 #define __lockless__log_h__
 
-#include "utils.h"
+#include "time.h"
 
 #include <array>
 #include <string>
 #include <iostream>
 
 namespace lockless {
+
+
+/******************************************************************************/
+/* GLOBAL LOG CLOCK                                                           */
+/******************************************************************************/
+
+namespace details {
+
+// Generates a unique tick for each log message.
+extern Clock<size_t> GlobalLogClock;
+
+} // namespace details
+
 
 /******************************************************************************/
 /* LOG TYPE                                                                   */
@@ -32,12 +45,10 @@ inline std::string to_string(LogType type)
 {
     // Try to to keep the same number of char for each.
     switch (type) {
-
     case LogRcu:   return "Rcu  ";
     case LogQueue: return "Queue";
     case LogMap:   return "Map  ";
     default:       return "-----";
-
     }
 }
 
@@ -49,18 +60,16 @@ inline std::string to_string(LogType type)
 struct LogEntry
 {
     template<typename Str>
-    LogEntry(LogType type, double ts, Str&& log) :
-        type(type), ts(ts), log(std::forward<Str>(log))
+    LogEntry(LogType type, size_t tick, Str&& log) :
+        type(type), tick(tick), log(std::forward<Str>(log))
     {}
 
-    std::string print(double tsOffset = 0.0) const
+    std::string print() const
     {
         std::array<char, 256> buffer;
 
-        int written = snprinf(
-                buffer.data(), buffer.size(),
-                "<%10.6lf>[%s]: %s",
-                (ts - tsOffset), to_string(type), log.c_str());
+        int written = snprinf(buffer.data(), buffer.size(),
+                "<%10.6lf>[%s]: %s", tick, to_string(type), log.c_str());
 
         if (writen < 0) return "LOG ERROR";
         if (written > buffer.size()) written = buffer.size();
@@ -68,14 +77,19 @@ struct LogEntry
         return std::string(buffer.data(), written);
     }
 
+    bool operator< (const LogEntry& other) const
+    {
+        return Clock<size_t>::compare(*this, other) < 0;
+    }
+
     LogType type;
-    double ts;
+    size_t tick;
     std::string log;
 };
 
 
 /******************************************************************************/
-/* LOGGER                                                                     */
+/* LOG                                                                        */
 /******************************************************************************/
 
 template<size_t Size>
@@ -84,8 +98,7 @@ struct Log
     /* Blah
 
      */
-    Log(bool sampleTime = true) :
-        sampleTime(sampleTime), index(0)
+    Log() : index(0)
     {
         for (auto& entry : log) entry.store(nullptr);
     }
@@ -94,10 +107,8 @@ struct Log
 
      */
     template<typename LogFirst, typename LogSecond>
-    Log(    const LogFirst& first,
-            const LogSecond& second,
-            double sampleTime = true) :
-        sampleTime(sampleTime), index(0)
+    Log(const LogFirst& first, const LogSecond& second) :
+        index(0)
     {
         auto firstDump = first.dump();
         auto secondDump = second.dump();
@@ -115,12 +126,12 @@ struct Log
             else if (j == secondDump.size())
                 entry = &firstDump[i++];
 
-            else if (firstDump[i].ts <= secondDump[j].ts)
-                entry = &firstDump[i++];
+            else if (secondDump[i] < firstDump[j])
+                entry = &secondDump[j++];
 
-            else entry = &secondDump[j++];
+            else entry = &firstDump[i++];
 
-            log(entry->type, entry->log, entry->ts);
+            log(entry->type, entry->log, entry->tick);
         }
     }
 
@@ -133,12 +144,12 @@ struct Log
 
      */
     template<typename Str>
-        void log(LogType type, Str&& log, double ts = -1)
+    void log(LogType type, Str&& log, size_t tick = -1)
     {
-        if (sampleTime && ts < 0) ts = Time::wall();
+        if (tick == -1) tick = details::GlobalLogClock.tick();
 
         size_t i = index.fetch_add(1) % log.size();
-        LogEntry* old = log[i].exchange(new LogEntry(type, ts, log));
+        LogEntry* old = log[i].exchange(new LogEntry(type, tick, log));
 
         if (old) delete old;
     }
