@@ -164,8 +164,6 @@ private:
      */
     void doDeferred(Epoch* epoch)
     {
-        assert(epoch.count == 0);
-
         DeferEntry* entry = epoch.deferList.exchange(nullptr);
         while (entry) {
             entry->fn();
@@ -174,8 +172,6 @@ private:
             delete entry;
             entry = next;
         }
-
-        assert(epoch.count == 0);
     }
 
 

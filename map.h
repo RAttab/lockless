@@ -8,6 +8,7 @@
 #ifndef __lockless_map_h__
 #define __lockless_map_h__
 
+#include "rcu.h"
 #include "atomizer.h"
 #include "magic.h"
 #include "utils.h"
@@ -15,7 +16,6 @@
 #include <atomic>
 #include <cassert>
 #include <cstdlib>
-#include <type_traits>
 
 namespace lockless {
 
@@ -185,7 +185,7 @@ private:
             size_t size = sizeof(capacity) + sizeof(next) + sizeof(prev);
             size += sizeof(Bucket) * capacity;
 
-            Table* table = malloc(size);
+            Table* table = std::malloc(size);
             table->capacity = capacity;
             table->next.store(nullptr);
             table->prev = nullptr;
