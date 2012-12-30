@@ -14,4 +14,6 @@ enable_testing()
 add_definitions("-std=c++11 -Wall -Wextra -Werror -pedantic -O4")
 include_directories("${PROJECT_SOURCE_DIR}")
 
+add_library(lockless_log log.cpp)
+
 add_subdirectory(tests)

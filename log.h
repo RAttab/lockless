@@ -1,22 +1,22 @@
-/** log.h                                 -*- C++ -*-
-    Rémi Attab (remi.attab@gmail.com), 24 Dec 2012
-    FreeBSD-style copyright and disclaimer apply
+/* log.h                                 -*- C++ -*-
+   Rémi Attab (remi.attab@gmail.com), 24 Dec 2012
+   FreeBSD-style copyright and disclaimer apply
 
-    Lockfree logger used for debugging with minimal lantency.
-
-*/
+   Lockfree logger used for debugging with minimal lantency.
+ */
 
 #ifndef __lockless__log_h__
 #define __lockless__log_h__
 
-#include "time.h"
+#include "clock.h"
 
+#include <stdio.h>
 #include <array>
+#include <vector>
 #include <string>
 #include <iostream>
 
 namespace lockless {
-
 
 /******************************************************************************/
 /* GLOBAL LOG CLOCK                                                           */
@@ -68,18 +68,19 @@ struct LogEntry
     {
         std::array<char, 256> buffer;
 
-        int written = snprinf(buffer.data(), buffer.size(),
-                "<%10.6lf>[%s]: %s", tick, to_string(type), log.c_str());
+        int written = snprintf(buffer.data(), buffer.size(),
+                "<%10ld>[%s]: %s", tick, to_string(type).c_str(), log.c_str());
 
-        if (writen < 0) return "LOG ERROR";
-        if (written > buffer.size()) written = buffer.size();
+        if (written < 0) return "LOG ERROR";
+        if (static_cast<unsigned>(written) > buffer.size())
+            written = buffer.size();
 
         return std::string(buffer.data(), written);
     }
 
     bool operator< (const LogEntry& other) const
     {
-        return Clock<size_t>::compare(*this, other) < 0;
+        return Clock<size_t>::compare(this->tick, other.tick) < 0;
     }
 
     LogType type;
@@ -100,7 +101,7 @@ struct Log
      */
     Log() : index(0)
     {
-        for (auto& entry : log) entry.store(nullptr);
+        for (auto& entry : logs) entry.store(nullptr);
     }
 
     /* Blah
@@ -144,14 +145,23 @@ struct Log
 
      */
     template<typename Str>
-    void log(LogType type, Str&& log, size_t tick = -1)
+    void log(LogType type, Str&& msg, size_t tick = -1)
     {
-        if (tick == -1) tick = details::GlobalLogClock.tick();
+        if (tick == static_cast<size_t>(-1))
+            tick = details::GlobalLogClock.tick();
 
-        size_t i = index.fetch_add(1) % log.size();
-        LogEntry* old = log[i].exchange(new LogEntry(type, tick, log));
+        size_t i = index.fetch_add(1) % logs.size();
+        LogEntry* old = logs[i].exchange(new LogEntry(type, tick, msg));
 
         if (old) delete old;
+    }
+
+    template<typename... Args>
+    void log(LogType type, const std::string& format, Args&&... args)
+    {
+        std::array<char, 256> buffer;
+        std::snprintf(buffer.data(), buffer.size(), format.c_str(), args...);
+        log(type, std::string(buffer.data()));
     }
 
     /* Blah
@@ -160,12 +170,12 @@ struct Log
     std::vector<LogEntry> dump()
     {
         std::vector<LogEntry> dump;
-        dump.reserve(log.size());
+        dump.reserve(logs.size());
 
         size_t start = index.load();
-        for (size_t i = start; i != start; i = (i + 1) % log.size()) {
-            LogEntry* entry = log[i].exchange(nullptr);
-            dump.push_pack(*entry);
+        for (size_t i = start; i != start; i = (i + 1) % logs.size()) {
+            LogEntry* entry = logs[i].exchange(nullptr);
+            dump.push_back(*entry);
             delete entry;
         }
 
@@ -174,7 +184,7 @@ struct Log
 
 private:
     std::atomic<size_t> index;
-    std::array<std::atomic<LogEntry*>, Size> log;
+    std::array<std::atomic<LogEntry*>, Size> logs;
 };
 
 
@@ -185,7 +195,8 @@ private:
 /* Blah
 
  */
-void logToStream(const Log& log, const std::ostream& stream = std::cerr)
+template<typename Log>
+void logToStream(const Log& log, std::ostream& stream = std::cerr)
 {
     std::vector<LogEntry> entries = log.dump();
 
@@ -196,16 +207,24 @@ void logToStream(const Log& log, const std::ostream& stream = std::cerr)
 }
 
 /* Merge multiple logs together through template magicery. */
-template<typename LogBase, typename LogOther, typename LogPack>
-Log logMerge(const LogBase& base, const LogOther& other, const LogPack& pack...)
+template<typename LogBase, typename LogOther, typename... LogPack>
+LogBase logMerge(
+        const LogBase& base, const LogOther& other, const LogPack&... pack)
 {
     return logMerge(LogBase(base, other), pack...);
 }
 template<typename LogBase, typename LogOther>
-Log logMerge(const LogBase& base, const LogOther& other)
+LogBase logMerge(const LogBase& base, const LogOther& other)
 {
     return LogBase(base, other);
 }
+
+
+/******************************************************************************/
+/* GLOBAL LOG                                                                 */
+/******************************************************************************/
+
+extern Log<10240> GlobalLog;
 
 } // lockless
 

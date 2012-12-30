@@ -9,6 +9,7 @@
 #ifndef __lockless__clock_h__
 #define __lockless__clock_h__
 
+#include <atomic>
 #include <type_traits>
 
 namespace lockless {
