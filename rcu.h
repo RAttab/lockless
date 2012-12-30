@@ -8,8 +8,10 @@
 #ifndef __lockless__rcu_h__
 #define __lockless__rcu_h__
 
-#include <cassert>
 #include <atomic>
+#include <functional>
+#include <cassert>
+#include <cstddef>
 
 namespace lockless {
 
@@ -32,17 +34,14 @@ struct Rcu
 
         DeferFn fn;
         std::atomic<DeferEntry*> next;
-    }
+    };
 
     struct Epoch
     {
         std::atomic<size_t> count;
         std::atomic<DeferEntry*> deferList;
 
-        Epoch(RCU* parent) :
-            count(0),
-            deferList(nullptr)
-        {}
+        Epoch() : count(0), deferList(nullptr) {}
     };
 
 
@@ -54,11 +53,13 @@ struct Rcu
         current(new Epoch),
         other(new Epoch)
     {
+#if 0
         assert(current.is_lock_free());
 
         Epoch* epoch = current.load();
         assert(epoch->count.is_lock_free());
         assert(epoch->deferList.is_lock_free());
+#endif
     }
 
 
@@ -84,10 +85,11 @@ struct Rcu
     {
         Epoch* oldCurrent;
         Epoch* oldOther = other.load();
-        if (!other.count) {
+
+        if (!oldOther->count) {
             doDeferred(oldOther);
 
-            Epoch* oldCurrent = current.load();
+            oldCurrent = current.load();
             if (oldCurrent != oldOther &&
                     current.compare_exchange_strong(oldCurrent, oldOther))
             {
@@ -148,9 +150,12 @@ struct Rcu
             continue;
         }
 
-        EntryList& head = oldCurrent->deferedList;
-        entry.next = oldCurrent->deferedList.load();
-        while (!head.compare_exchange_weak(entry.next, entry));
+        std::atomic<DeferEntry*>& head = oldCurrent->deferList;
+
+        DeferEntry* next;
+        do {
+            entry->next.store(next = head.load());
+        } while (!head.compare_exchange_weak(next, entry));
 
 
         // Exit the epoch which allows it to be swaped again.
@@ -164,7 +169,7 @@ private:
      */
     void doDeferred(Epoch* epoch)
     {
-        DeferEntry* entry = epoch.deferList.exchange(nullptr);
+        DeferEntry* entry = epoch->deferList.exchange(nullptr);
         while (entry) {
             entry->fn();
 
@@ -190,7 +195,7 @@ private:
  */
 struct RcuGuard
 {
-    RcuGuard(const Rcu& rcu) :
+    RcuGuard(Rcu& rcu) :
         rcu(rcu),
         epoch(rcu.enter())
     {}
@@ -199,7 +204,7 @@ struct RcuGuard
 
 private:
 
-    const Rcu& rcu;
+    Rcu& rcu;
     Rcu::Epoch* epoch;
 
 };
