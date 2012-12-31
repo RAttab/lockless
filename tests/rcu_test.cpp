@@ -55,25 +55,25 @@ BOOST_AUTO_TEST_CASE( test_basics )
     cerr << "=== SECOND ===" << endl;
     logToStream(GlobalLog);
 
-    int defered = 0;
-    auto deferFn = [&] { defered++; };
+    int deferred = 0;
+    auto deferFn = [&] { deferred++; };
 
     rcu.defer(deferFn);
-    BOOST_CHECK(!defered);
+    BOOST_CHECK(!deferred);
 
     cerr << "=== DEFER ===" << endl;
     logToStream(GlobalLog);
 
     {
         size_t e0 = rcu.enter();
-        BOOST_CHECK_EQUAL(defered, 0);
+        BOOST_CHECK_EQUAL(deferred, 0);
 
         size_t e1 = rcu.enter();
-        BOOST_CHECK_EQUAL(defered, 1);
+        BOOST_CHECK_EQUAL(deferred, 1);
 
         rcu.exit(e1);
         rcu.exit(e0);
-        BOOST_CHECK_EQUAL(defered, 1);
+        BOOST_CHECK_EQUAL(deferred, 1);
     }
 
     cerr << "=== DO_DEFER ===" << endl;
@@ -86,14 +86,14 @@ BOOST_AUTO_TEST_CASE( test_basics )
             rcu.defer(deferFn);
 
         size_t e1 = rcu.enter();
-        BOOST_CHECK_EQUAL(defered, 1);
+        BOOST_CHECK_EQUAL(deferred, 1);
         rcu.exit(e1);
 
-        BOOST_CHECK_EQUAL(defered, 1);
+        BOOST_CHECK_EQUAL(deferred, 1);
         rcu.exit(e0);
 
         size_t e3 = rcu.enter();
-        BOOST_CHECK_EQUAL(defered, 4);
+        BOOST_CHECK_EQUAL(deferred, 4);
 
         rcu.exit(e3);
     }
