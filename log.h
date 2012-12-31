@@ -194,7 +194,7 @@ struct Log
         std::vector<LogEntry> dump;
         dump.reserve(logs.size());
 
-        size_t end = index.load();
+        size_t end = index.load() % logs.size();
         size_t start = (end + 1) % logs.size();
 
         for (size_t i = start; i != end; i = (i + 1) % logs.size()) {
