@@ -41,16 +41,7 @@ enum LogType
     LogMap   = 0x300,
 };
 
-inline std::string to_string(LogType type)
-{
-    // Try to to keep the same number of char for each.
-    switch (type) {
-    case LogRcu:   return "Rcu  ";
-    case LogQueue: return "Queue";
-    case LogMap:   return "Map  ";
-    default:       return "-----";
-    }
-}
+std::string to_string(LogType type);
 
 
 /******************************************************************************/
@@ -67,23 +58,7 @@ struct LogEntry
         msg(std::forward<Msg>(msg))
     {}
 
-    std::string print() const
-    {
-        std::array<char, 256> buffer;
-
-        int written = snprintf(
-                buffer.data(), buffer.size(),
-                "%6ld [%s] %-10s: %s",
-                tick,
-                to_string(type).c_str(),
-                title.c_str(),
-                msg.c_str());
-
-        if (written < 0) return "LOG ERROR";
-        written = std::min<unsigned>(written, buffer.size());
-
-        return std::string(buffer.data(), written);
-    }
+    std::string print() const;
 
     bool operator< (const LogEntry& other) const
     {
