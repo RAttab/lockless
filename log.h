@@ -65,6 +65,14 @@ struct LogEntry
         return Clock<size_t>::compare(this->tick, other.tick) < 0;
     }
 
+    bool operator= (const LogEntry& other) const
+    {
+        return type == other.type &&
+            tick == other.tick &&
+            title == other.title &&
+            msg == other.msg;
+    }
+
     LogType type;
     size_t tick;
     std::string title;
@@ -91,9 +99,11 @@ struct Log
 
      */
     template<typename LogFirst, typename LogSecond>
-    Log(const LogFirst& first, const LogSecond& second) :
+    Log(LogFirst&& first, LogSecond&& second) :
         index(0)
     {
+        for (auto& entry : logs) entry.store(nullptr);
+
         auto firstDump = first.dump();
         auto secondDump = second.dump();
 
@@ -109,8 +119,9 @@ struct Log
             else if (j == secondDump.size())
                 entry = &firstDump[i++];
 
-            else if (secondDump[i] < firstDump[j])
+            else if (secondDump[j] < firstDump[i]) {
                 entry = &secondDump[j++];
+            }
 
             else entry = &firstDump[i++];
 
@@ -175,11 +186,12 @@ struct Log
         std::vector<LogEntry> dump;
         dump.reserve(logs.size());
 
-        size_t end = index.load() % logs.size();
-        size_t start = (end + 1) % logs.size();
+        size_t start = index.load();
 
-        for (size_t i = start; i != end; i = (i + 1) % logs.size()) {
-            LogEntry* entry = logs[i].exchange(nullptr);
+        for (size_t i = 0; i < logs.size(); ++i) {
+            size_t index = (start + i) % logs.size();
+
+            LogEntry* entry = logs[index].exchange(nullptr);
             if (!entry) continue;
 
             dump.push_back(*entry);
@@ -204,27 +216,35 @@ private:
 /* Blah
 
  */
-template<typename Log>
-void logToStream(Log& log, std::ostream& stream = std::cerr)
+void logToStream(
+        const std::vector<LogEntry>& dump, std::ostream& stream = std::cerr)
 {
-    std::vector<LogEntry> entries = log.dump();
-
-    for (const LogEntry& entry : entries)
+    for (const LogEntry& entry : dump)
         stream << entry.print() << "\n";
-
     stream.flush();
+}
+
+/* Blah
+
+ */
+template<typename Log>
+void logToStream(Log&& log, std::ostream& stream = std::cerr)
+{
+    logToStream(log.dump(), stream);
 }
 
 /* Merge multiple logs together through template magicery. */
 template<typename LogBase, typename LogOther, typename... LogPack>
-LogBase logMerge(LogBase& base, LogOther& other, LogPack&... pack)
+LogBase logMerge(LogBase&& base, LogOther&& other, LogPack&&... pack)
 {
-    return logMerge(LogBase(base, other), pack...);
+    return logMerge(
+            LogBase(std::forward<LogBase>(base), std::forward<LogOther>(other)),
+            std::forward<LogPack>(pack)...);
 }
 template<typename LogBase, typename LogOther>
-LogBase logMerge(const LogBase& base, const LogOther& other)
+LogBase logMerge(LogBase&& base, LogOther&& other)
 {
-    return LogBase(base, other);
+    return LogBase(std::forward<LogBase>(base), std::forward<LogOther>(other));
 }
 
 
