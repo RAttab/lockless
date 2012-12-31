@@ -11,7 +11,7 @@
 # CONFIG
 #------------------------------------------------------------------------------#
 
-cmake_minimum_required(VERSION 2.8)
+cmake_minimum_required(VERSION 2.6)
 project(lockless)
 
 enable_testing()
@@ -29,7 +29,7 @@ find_library(LIB_TCMALLOC tcmalloc)
 
 if(USE_TCMALLOC)
   if(LIB_TCMALLOC MATCHES "NOTFOUND")
-    message("WARNING: tcmalloc is unavailable.")
+    message("WARNING: unable to find tcmalloc")
   else()
     link_libraries(tcmalloc)
   endif()
