@@ -130,8 +130,13 @@ struct Log
     void log(LogType type, size_t tick, Title&& title, Msg&& msg)
     {
         size_t i = index.fetch_add(1) % logs.size();
-        LogEntry* old = logs[i].exchange(new LogEntry(type, tick, title, msg));
 
+        LogEntry* entry = new LogEntry(
+                type, tick,
+                std::forward<Title>(title),
+                std::forward<Msg>(msg));
+
+        LogEntry* old = logs[i].exchange(entry);
         if (old) delete old;
     }
 
@@ -141,7 +146,8 @@ struct Log
     template<typename Title, typename Msg>
     void log(LogType type, Title&& title, Msg&& msg)
     {
-        log(type, details::GlobalLogClock.tick(), title, msg);
+        size_t tick = details::GlobalLogClock.tick();
+        log(type, tick, std::forward<Title>(title), msg);
     }
 
     /* Blah
@@ -158,7 +164,7 @@ struct Log
     {
         std::array<char, 256> buffer;
         snprintf(buffer.data(), buffer.size(), format.c_str(), args...);
-        log(type, title, std::string(buffer.data()));
+        log(type, std::forward<Title>(title), std::string(buffer.data()));
     }
 
     /* Blah
