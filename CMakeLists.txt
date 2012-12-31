@@ -32,6 +32,8 @@ if(USE_TCMALLOC)
         message("WARNING: unable to find tcmalloc")
     else()
         link_libraries(tcmalloc)
+        add_definitions("-fno-builtin-malloc -fno-builtin-calloc")
+        add_definitions("-fno-builtin-realloc -fno-builtin-free")
     endif()
 endif()
 
