@@ -1,12 +1,14 @@
-/** rcu.h                                 -*- C++ -*-
-    Rémi Attab (remi.attab@gmail.com), 16 Dec 2012
-    FreeBSD-style copyright and disclaimer apply
+/* rcu.h                                 -*- C++ -*-
+   Rémi Attab (remi.attab@gmail.com), 16 Dec 2012
+   FreeBSD-style copyright and disclaimer apply
 
-    Lightweight Read-Copy-Update implementation.
+   Lightweight Read-Copy-Update implementation.
 */
 
 #ifndef __lockless__rcu_h__
 #define __lockless__rcu_h__
+
+#include "log.h"
 
 #include <atomic>
 #include <functional>
@@ -21,45 +23,20 @@ namespace lockless {
 
 /* Blah
 
-   \todo Hide the implementation and the Epoch & DeferEntry classes in a cpp
-       file. Need a build system first though.
  */
 struct Rcu
 {
     typedef std::function<void()> DeferFn;
-
-    struct DeferEntry
-    {
-        DeferEntry(const DeferFn& fn) : fn(fn) {}
-
-        DeferFn fn;
-        std::atomic<DeferEntry*> next;
-    };
-
-    struct Epoch
-    {
-        std::atomic<size_t> count;
-        std::atomic<DeferEntry*> deferList;
-
-        Epoch() : count(0), deferList(nullptr) {}
-    };
 
 
     /* Blah
 
        Exception Safety: Only throws on calls to new.
      */
-    Rcu() :
-        current(new Epoch),
-        other(new Epoch)
+    Rcu() : current(0)
     {
-#if 0
-        assert(current.is_lock_free());
-
-        Epoch* epoch = current.load();
-        assert(epoch->count.is_lock_free());
-        assert(epoch->deferList.is_lock_free());
-#endif
+        epochs[0].init();
+        epochs[1].init();
     }
 
 
@@ -69,8 +46,8 @@ struct Rcu
      */
     ~Rcu()
     {
-        doDeferred(current.load());
-        doDeferred(other.load());
+        doDeferred(0);
+        doDeferred(1);
     }
 
 
@@ -81,24 +58,23 @@ struct Rcu
 
        Exception safety: Does not throw.
      */
-    Epoch* enter()
+    size_t enter()
     {
-        Epoch* oldCurrent;
-        Epoch* oldOther = other.load();
+        size_t oldCurrent = current.load();
+        size_t oldOther = oldCurrent + 1;
 
-        if (!oldOther->count) {
+        GlobalLog.log(LogRcu, "ENTER", "epoch=%ld, oldCount=%ld",
+                oldCurrent, epochs[oldOther % 2].count.load());
+
+        if (!epochs[oldOther % 2].count) {
             doDeferred(oldOther);
+            if (current.compare_exchange_strong(oldCurrent, oldCurrent + 1))
+                oldCurrent++;
 
-            oldCurrent = current.load();
-            if (oldCurrent != oldOther &&
-                    current.compare_exchange_strong(oldCurrent, oldOther))
-            {
-                other.store(oldCurrent);
-            }
+            GlobalLog.log(LogRcu, "SWAP", "epoch=%ld", oldCurrent);
         }
-        else oldCurrent = current.load();
 
-        oldCurrent->count++;
+        epochs[oldCurrent % 2].count++;
         return oldCurrent;
     }
 
@@ -109,20 +85,23 @@ struct Rcu
 
        Exception Safety: Does not throw.
      */
-    void exit(Epoch* epoch)
+    void exit(size_t current)
     {
-        assert(epoch->count > 0);
-        epoch->count--;
+        GlobalLog.log(LogRcu, "EXIT", "epoch=%ld, count=%ld",
+                current, epochs[current % 2].count.load());
+
+        assert(epochs[current % 2].count > 0);
+        epochs[current % 2].count--;
     }
 
 
-    /** Blah
+    /* Blah
 
-        Thread safety: Issues a single call to new which could lock. Everything
-           else is lock-free and wait-free.
+       Thread safety: Issues a single call to new which could lock. Everything
+          else is lock-free and wait-free.
 
-        Exception safety: Issues a single call to new which may throw.
-            Everything else is nothrow.
+       Exception safety: Issues a single call to new which may throw.
+           Everything else is nothrow.
      */
     void defer(const DeferFn& defer)
     {
@@ -139,37 +118,42 @@ struct Rcu
            being deleted by incrementing current's counter and checking to see
            whether we're still in current after the counter was incremented.
         */
-        Epoch* oldCurrent;
+        size_t oldCurrent;
         while (true) {
             oldCurrent = current.load();
-            oldCurrent->count++;
+            epochs[oldCurrent % 2].count++;
             if (current.load() == oldCurrent) break;
 
             // Not safe to insert the entry, try again.
-            oldCurrent->count--;
+            epochs[oldCurrent % 2].count--;
             continue;
         }
 
-        std::atomic<DeferEntry*>& head = oldCurrent->deferList;
-
+        auto& head = epochs[oldCurrent % 2].deferList;
         DeferEntry* next;
+
         do {
             entry->next.store(next = head.load());
         } while (!head.compare_exchange_weak(next, entry));
 
+        GlobalLog.log(LogRcu, "DEFER", "epoch=%ld, head=%p, next=%p",
+                oldCurrent, entry, next);
 
         // Exit the epoch which allows it to be swaped again.
-        oldCurrent->count--;
+        epochs[oldCurrent % 2].count--;
     }
 
 private:
 
-    /** We can't add anything to the defered list unless count > 1.
-        So if count == 0 then we can safely delete anything we want.
+    /* We can't add anything to the defered list unless count > 1.
+       So if count == 0 then we can safely delete anything we want.
      */
-    void doDeferred(Epoch* epoch)
+    void doDeferred(size_t epoch)
     {
-        DeferEntry* entry = epoch->deferList.exchange(nullptr);
+        DeferEntry* entry = epochs[epoch % 2].deferList.exchange(nullptr);
+
+        GlobalLog.log(LogRcu, "DO_DEFER", "epoch=%ld, head=%p", epoch, entry);
+
         while (entry) {
             entry->fn();
 
@@ -180,8 +164,30 @@ private:
     }
 
 
-    std::atomic<Epoch*> current;
-    std::atomic<Epoch*> other;
+    struct DeferEntry
+    {
+        DeferEntry(const DeferFn& fn) : fn(fn) {}
+
+        DeferFn fn;
+        std::atomic<DeferEntry*> next;
+    };
+
+
+    struct Epoch
+    {
+        std::atomic<size_t> count;
+        std::atomic<DeferEntry*> deferList;
+
+        void init()
+        {
+            count.store(0);
+            deferList.store(nullptr);
+        }
+    };
+
+
+    std::atomic<size_t> current;
+    Epoch epochs[2];
 };
 
 
@@ -205,7 +211,7 @@ struct RcuGuard
 private:
 
     Rcu& rcu;
-    Rcu::Epoch* epoch;
+    size_t epoch;
 
 };
 

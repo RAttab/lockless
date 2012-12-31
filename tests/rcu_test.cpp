@@ -11,6 +11,7 @@
 #include "rcu.h"
 
 #include <boost/test/unit_test.hpp>
+#include <iostream>
 
 using namespace std;
 using namespace lockless;
@@ -19,37 +20,84 @@ BOOST_AUTO_TEST_CASE( test_basics )
 {
     Rcu rcu;
 
-    { 
-        RcuGuard guard(rcu); 
+    {
+        RcuGuard guard(rcu);
     }
 
-    { 
-        RcuGuard guard0(rcu); 
-        RcuGuard guard1(rcu); 
+    cerr << "=== FIRST ===" << endl;
+    logToStream(GlobalLog);
+
+    {
+        size_t e0 = rcu.enter();
+        size_t e1 = rcu.enter();
+        size_t e2 = rcu.enter();
+
+        BOOST_CHECK_NE(e0, e1);
+        BOOST_CHECK_EQUAL(e1, e2);
+        rcu.exit(e2);
+
+        size_t e3 = rcu.enter();
+        BOOST_CHECK_EQUAL(e2, e3);
+
+        rcu.exit(e0);
+        size_t e4 = rcu.enter();
+        BOOST_CHECK_NE(e3, e4);
+
+        size_t e5 = rcu.enter();
+        BOOST_CHECK_EQUAL(e4, e5);
+
+        rcu.exit(e1);
+        rcu.exit(e3);
+        rcu.exit(e4);
+        rcu.exit(e5);
     }
+
+    cerr << "=== SECOND ===" << endl;
+    logToStream(GlobalLog);
 
     int defered = 0;
     auto deferFn = [&] { defered++; };
-    
+
     rcu.defer(deferFn);
     BOOST_CHECK(!defered);
 
+    cerr << "=== DEFER ===" << endl;
+    logToStream(GlobalLog);
+
     {
-        Rcu::Epoch* epoch = rcu.enter();
+        size_t e0 = rcu.enter();
+        BOOST_CHECK_EQUAL(defered, 0);
+
+        size_t e1 = rcu.enter();
         BOOST_CHECK_EQUAL(defered, 1);
 
-        rcu.exit(epoch);
+        rcu.exit(e1);
+        rcu.exit(e0);
         BOOST_CHECK_EQUAL(defered, 1);
     }
 
+    cerr << "=== DO_DEFER ===" << endl;
+    logToStream(GlobalLog);
+
     {
-        RcuGuard guard(rcu);
+        size_t e0 = rcu.enter();
 
         for (int i = 0; i < 3; ++i)
             rcu.defer(deferFn);
 
+        size_t e1 = rcu.enter();
         BOOST_CHECK_EQUAL(defered, 1);
+        rcu.exit(e1);
+
+        BOOST_CHECK_EQUAL(defered, 1);
+        rcu.exit(e0);
+
+        size_t e3 = rcu.enter();
+        BOOST_CHECK_EQUAL(defered, 4);
+
+        rcu.exit(e3);
     }
 
-    BOOST_CHECK_EQUAL(defered, 4);
+    cerr << "=== DONE ===" << endl;
+    logToStream(GlobalLog);
 }
