@@ -28,11 +28,11 @@ option(USE_TCMALLOC "Use tcmalloc for heap allocations." ON)
 find_library(LIB_TCMALLOC tcmalloc)
 
 if(USE_TCMALLOC)
-  if(LIB_TCMALLOC MATCHES "NOTFOUND")
-    message("WARNING: unable to find tcmalloc")
-  else()
-    link_libraries(tcmalloc)
-  endif()
+    if(LIB_TCMALLOC MATCHES "NOTFOUND")
+        message("WARNING: unable to find tcmalloc")
+    else()
+        link_libraries(tcmalloc)
+    endif()
 endif()
 
 
@@ -40,10 +40,10 @@ endif()
 # BUILD
 #------------------------------------------------------------------------------#
 
-install(FILES utils.h clock.h log.h	DESTINATION include/lockless)
-install(FILES magic.h atomizer.h	DESTINATION include/lockless)
-install(FILES rcu.h			DESTINATION include/lockless)
-install(FILES map.h map.tcc		DESTINATION include/lockless)
+install(FILES utils.h clock.h log.h DESTINATION include/lockless)
+install(FILES magic.h atomizer.h    DESTINATION include/lockless)
+install(FILES rcu.h                 DESTINATION include/lockless)
+install(FILES map.h map.tcc         DESTINATION include/lockless)
 
 add_library(lockless_log SHARED log.cpp)
 install(TARGETS lockless_log DESTINATION lib)
