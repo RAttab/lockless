@@ -12,6 +12,9 @@
 
 #include <boost/test/unit_test.hpp>
 #include <iostream>
+#include <random>
+#include <map>
+#include <thread>
 
 using namespace std;
 using namespace lockless;
@@ -102,8 +105,80 @@ BOOST_AUTO_TEST_CASE(complex_defer_test)
     rcu.exit(counters.size());
 }
 
+BOOST_AUTO_TEST_CASE(destructor_defer_test)
+{
+    unsigned counter = 0;
+    auto deferFn = [&] { counter++; };
 
-BOOST_AUTO_TEST_CASE( test_parallel )
+    {
+        Rcu rcu;
+
+        rcu.defer(deferFn);
+        rcu.enter();
+        rcu.defer(deferFn);
+
+        BOOST_CHECK_EQUAL(counter, 0);
+    }
+
+    BOOST_CHECK_EQUAL(counter, 2);
+}
+
+BOOST_AUTO_TEST_CASE(fuzz_test)
+{
+    GlobalLog.dump();
+
+    map<size_t, size_t> expected;
+    map<size_t, size_t> counters;
+
+    {
+        Rcu rcu;
+
+        mt19937_64 engine;
+        uniform_int_distribution<unsigned> rnd(0, 6);
+
+        array<size_t, 2> epochs;
+        array<size_t, 2> inEpochs;
+
+        for (size_t i = 0; i < 2; ++i)
+            epochs[i] = inEpochs[i] = 0;
+
+        for (size_t i = 0; i < 1000; ++i) {
+            unsigned action = rnd(engine);
+
+            if (action == 0) {
+                size_t e = rcu.enter();
+
+                if (!inEpochs[0]) epochs[0] = e;
+                else if (!inEpochs[1]) epochs[1] = e;
+
+                if (epochs[0] == e) inEpochs[0]++;
+                else if (epochs[1] == e) inEpochs[1]++;
+
+                else assert(false);
+            }
+
+            else if (action == 1) {
+                size_t j = i % 2;
+                if (!inEpochs[j]) j = (j + 1) % 2;
+                if (!inEpochs[j]) continue;
+
+                rcu.exit(epochs[j]);
+                inEpochs[j]--;
+            }
+
+            else {
+                size_t j = std::max(epochs[0], epochs[1]);
+                rcu.defer([&, j] { counters[j]++; });
+                expected[j]++;
+            }
+        }
+    }
+
+    for (const auto& exp: expected)
+        BOOST_CHECK_EQUAL(counters[exp.first], exp.second);
+}
+
+BOOST_AUTO_TEST_CASE(parallel_test)
 {
 
 }
