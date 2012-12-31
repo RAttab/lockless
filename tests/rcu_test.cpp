@@ -14,6 +14,7 @@
 #include <iostream>
 #include <random>
 #include <map>
+#include <memory>
 #include <thread>
 
 using namespace std;
@@ -148,9 +149,11 @@ BOOST_AUTO_TEST_CASE(fuzz_test)
             if (action == 0) {
                 size_t e = rcu.enter();
 
+                // If there's an empty slot, take it.
                 if (!inEpochs[0]) epochs[0] = e;
                 else if (!inEpochs[1]) epochs[1] = e;
 
+                // Increment that slot's counter.
                 if (epochs[0] == e) inEpochs[0]++;
                 else if (epochs[1] == e) inEpochs[1]++;
 
@@ -158,6 +161,7 @@ BOOST_AUTO_TEST_CASE(fuzz_test)
             }
 
             else if (action == 1) {
+                // Pick an epoch to exit at semi-random.
                 size_t j = i % 2;
                 if (!inEpochs[j]) j = (j + 1) % 2;
                 if (!inEpochs[j]) continue;
@@ -167,6 +171,7 @@ BOOST_AUTO_TEST_CASE(fuzz_test)
             }
 
             else {
+                // Add some deferred work.
                 size_t j = std::max(epochs[0], epochs[1]);
                 rcu.defer([&, j] { counters[j]++; });
                 expected[j]++;
@@ -180,5 +185,33 @@ BOOST_AUTO_TEST_CASE(fuzz_test)
 
 BOOST_AUTO_TEST_CASE(parallel_test)
 {
+    enum {
+        Threads = 256,
+        Iterations = 1000,
+    };
 
+    array<atomic<size_t>, Threads> counters;
+    for (auto& c : counters) c.store(0);
+
+    {
+        Rcu rcu;
+
+        auto doThread = [&] (unsigned id) {
+            for (size_t i = 0; i < Iterations; ++i) {
+                RcuGuard guard(rcu);
+                rcu.defer([&, id] { counters[id]++; });
+            }
+        };
+
+        array<unique_ptr<thread>, Threads> threads;
+
+        for (size_t id = 0; id < Threads; ++id)
+            threads[id].reset(new thread(bind(doThread, id)));
+
+        for (auto& th : threads)
+            th->join();
+    }
+
+    for (size_t i = 0; i < counters.size(); ++i)
+        BOOST_CHECK_EQUAL(counters[i], Iterations);
 }
