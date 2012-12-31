@@ -59,21 +59,28 @@ inline std::string to_string(LogType type)
 
 struct LogEntry
 {
-    template<typename Str>
-    LogEntry(LogType type, size_t tick, Str&& log) :
-        type(type), tick(tick), log(std::forward<Str>(log))
+    template<typename Title, typename Msg>
+    LogEntry(LogType type, size_t tick, Title&& title, Msg&& msg) :
+        type(type),
+        tick(tick),
+        title(std::forward<Title>(title)),
+        msg(std::forward<Msg>(msg))
     {}
 
     std::string print() const
     {
         std::array<char, 256> buffer;
 
-        int written = snprintf(buffer.data(), buffer.size(),
-                "<%10ld>[%s]: %s", tick, to_string(type).c_str(), log.c_str());
+        int written = snprintf(
+                buffer.data(), buffer.size(),
+                "%6ld [%s] %-10s: %s",
+                tick,
+                to_string(type).c_str(),
+                title.c_str(),
+                msg.c_str());
 
         if (written < 0) return "LOG ERROR";
-        if (static_cast<unsigned>(written) > buffer.size())
-            written = buffer.size();
+        written = std::min<unsigned>(written, buffer.size());
 
         return std::string(buffer.data(), written);
     }
@@ -85,7 +92,8 @@ struct LogEntry
 
     LogType type;
     size_t tick;
-    std::string log;
+    std::string title;
+    std::string msg;
 };
 
 
@@ -118,7 +126,6 @@ struct Log
         size_t j = 0;
 
         while (i + j < firstDump.size() + secondDump.size()) {
-
             LogEntry* entry;
 
             if (i == firstDump.size())
@@ -132,7 +139,7 @@ struct Log
 
             else entry = &firstDump[i++];
 
-            log(entry->type, entry->log, entry->tick);
+            log(entry->type, entry->title, entry->msg, entry->tick);
         }
     }
 
@@ -144,24 +151,39 @@ struct Log
     /* Blah
 
      */
-    template<typename Str>
-    void log(LogType type, Str&& msg, size_t tick = -1)
+    template<typename Title, typename Msg>
+    void log(LogType type, size_t tick, Title&& title, Msg&& msg)
     {
-        if (tick == static_cast<size_t>(-1))
-            tick = details::GlobalLogClock.tick();
-
         size_t i = index.fetch_add(1) % logs.size();
-        LogEntry* old = logs[i].exchange(new LogEntry(type, tick, msg));
+        LogEntry* old = logs[i].exchange(new LogEntry(type, tick, title, msg));
 
         if (old) delete old;
     }
 
-    template<typename... Args>
-    void log(LogType type, const std::string& format, Args&&... args)
+    /* Blah
+
+     */
+    template<typename Title, typename Msg>
+    void log(LogType type, Title&& title, Msg&& msg)
+    {
+        log(type, details::GlobalLogClock.tick(), title, msg);
+    }
+
+    /* Blah
+
+       \todo GCC has a printf param check. No idea if it works with variadic
+             templates.
+     */
+    template<typename Title, typename... Args>
+    void log(
+            LogType type,
+            Title&& title,
+            const std::string& format,
+            Args&&... args)
     {
         std::array<char, 256> buffer;
-        std::snprintf(buffer.data(), buffer.size(), format.c_str(), args...);
-        log(type, std::string(buffer.data()));
+        snprintf(buffer.data(), buffer.size(), format.c_str(), args...);
+        log(type, title, std::string(buffer.data()));
     }
 
     /* Blah
@@ -172,9 +194,13 @@ struct Log
         std::vector<LogEntry> dump;
         dump.reserve(logs.size());
 
-        size_t start = index.load();
-        for (size_t i = start; i != start; i = (i + 1) % logs.size()) {
+        size_t end = index.load();
+        size_t start = (end + 1) % logs.size();
+
+        for (size_t i = start; i != end; i = (i + 1) % logs.size()) {
             LogEntry* entry = logs[i].exchange(nullptr);
+            if (!entry) continue;
+
             dump.push_back(*entry);
             delete entry;
         }
@@ -183,8 +209,10 @@ struct Log
     }
 
 private:
+
     std::atomic<size_t> index;
     std::array<std::atomic<LogEntry*>, Size> logs;
+
 };
 
 
@@ -196,7 +224,7 @@ private:
 
  */
 template<typename Log>
-void logToStream(const Log& log, std::ostream& stream = std::cerr)
+void logToStream(Log& log, std::ostream& stream = std::cerr)
 {
     std::vector<LogEntry> entries = log.dump();
 
@@ -208,8 +236,7 @@ void logToStream(const Log& log, std::ostream& stream = std::cerr)
 
 /* Merge multiple logs together through template magicery. */
 template<typename LogBase, typename LogOther, typename... LogPack>
-LogBase logMerge(
-        const LogBase& base, const LogOther& other, const LogPack&... pack)
+LogBase logMerge(LogBase& base, LogOther& other, LogPack&... pack)
 {
     return logMerge(LogBase(base, other), pack...);
 }
@@ -224,7 +251,7 @@ LogBase logMerge(const LogBase& base, const LogOther& other)
 /* GLOBAL LOG                                                                 */
 /******************************************************************************/
 
-extern Log<10240> GlobalLog;
+extern Log<1024> GlobalLog;
 
 } // lockless
 

@@ -16,6 +16,6 @@ Clock<size_t> GlobalLogClock;
 
 } // namespace details
 
-Log<10240> GlobalLog;
+Log<1024> GlobalLog;
 
 } // lockless
