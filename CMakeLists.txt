@@ -19,6 +19,7 @@ enable_testing()
 add_definitions("-std=c++11 -Wall -Wextra -Werror -pedantic -g -O4")
 include_directories("${PROJECT_SOURCE_DIR}")
 
+link_libraries(rt)
 
 #------------------------------------------------------------------------------#
 # TCMALLOC
