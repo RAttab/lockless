@@ -20,125 +20,108 @@ using namespace std;
 using namespace lockless;
 
 
-atomic<size_t> counter;
+/******************************************************************************/
+/* OPS                                                                        */
+/******************************************************************************/
 
-void doThread(Rcu& rcu, promise<double>& latency, unsigned iterations)
+struct Context
 {
-    Timer tm;
+    Rcu rcu;
+    atomic<size_t> counter;
+};
 
-    for (size_t it = 0; it < iterations; ++it) {
-        RcuGuard guard(rcu);
-        rcu.defer([] { counter++; });
-    }
-
-    latency.set_value(tm.elapsed() / iterations);
+void doEnterExitThread(Context& ctx, unsigned itCount)
+{
+    for (size_t it = 0; it < itCount; ++it)
+        RcuGuard guard(ctx.rcu);
 }
 
-pair<double, TimeDist>
-doTest(unsigned threadCount, size_t iterations)
+void doDeferThread(Context& ctx, unsigned itCount)
 {
-    vector<thread> threads;
-    vector<promise<double> > latencies;
-    TimeDist latencyDist;
-    double throughput;
-
-    counter.store(0);
-
-    // run the test.
-    {
-        Rcu rcu;
-
-        Timer tm;
-
-        latencies.reserve(threadCount);
-        threads.reserve(threadCount);
-
-        for (size_t th = 0; th < threadCount; ++th) {
-            latencies.emplace_back();
-            threads.emplace_back(
-                    doThread, ref(rcu), ref(latencies[th]), iterations);
-        }
-
-        for(auto& latency : latencies)
-            latencyDist.add(latency.get_future().get());
-
-        throughput = (threadCount * iterations) / tm.elapsed();
-    }
-
-    // cleanup the threads.
-    for (auto& th : threads) th.join();
-
-    return make_pair(throughput, latencyDist);
+    for (size_t it = 0; it < itCount; ++it)
+        ctx.rcu.defer([&] { ctx.counter++; });
 }
+
+
+/******************************************************************************/
+/* DUMPS                                                                      */
+/******************************************************************************/
+
+void dumpCsvLine(
+        const string& name,
+        unsigned thCount, size_t itCount,
+        const std::pair<TimeDist, TimeDist>& dists)
+{
+    const TimeDist& latency = dists.first;
+    const TimeDist& throughput = dists.second;
+
+    printf( "%s,%d,%ld,"
+            "%.9f,%.9f,%.9f,%.9f,"
+            "%ld,%ld,%ld,%ld\n",
+
+            name.c_str(), thCount, itCount,
+
+            latency.min(), latency.median(), latency.max(), latency.stddev(),
+
+            static_cast<size_t>(throughput.min()),
+            static_cast<size_t>(throughput.median()),
+            static_cast<size_t>(throughput.max()),
+            static_cast<size_t>(throughput.stddev()));
+}
+
+void dumpReadableLine(
+        const string& name,
+        unsigned thCount, size_t itCount,
+        const std::pair<TimeDist, TimeDist>& dists)
+{
+    const TimeDist& latency = dists.first;
+    const TimeDist& throughput = dists.second;
+
+    printf( "| %8s th=%3d it=%s "
+            "| s/ops=[ %s, %s, %s ] stddev=%s "
+            "| ops/s=[ %s, %s, %s ] stddev=%s\n",
+
+            name.c_str(), thCount, fmtValue(itCount).c_str(),
+
+            fmtElapsed(latency.min()).c_str(),
+            fmtElapsed(latency.median()).c_str(),
+            fmtElapsed(latency.max()).c_str(),
+            fmtElapsed(latency.stddev()).c_str(),
+
+            fmtValue(throughput.min()).c_str(),
+            fmtValue(throughput.median()).c_str(),
+            fmtValue(throughput.max()).c_str(),
+            fmtValue(throughput.stddev()).c_str());
+}
+
+
+/******************************************************************************/
+/* MAIN                                                                       */
+/******************************************************************************/
 
 int main(int argc, char** argv)
 {
-    unsigned threadCount = 1;
-    if (argc > 1) threadCount = stoul(string(argv[1]));
+    unsigned thCount = 1;
+    if (argc > 1) thCount = stoul(string(argv[1]));
 
-    size_t iterations = 100000;
-    if (argc > 2) iterations = stoull(string(argv[2]));
+    size_t itCount = 100000;
+    if (argc > 2) itCount = stoull(string(argv[2]));
 
     bool csvOutput = false;
     if (argc > 3) csvOutput = stoi(string(argv[3]));
 
+    PerfTest<Context> perf;
+    perf.add(doEnterExitThread, thCount, itCount);
+    perf.add(doDeferThread, thCount, itCount);
 
-    TimeDist throughputDist;
-    TimeDist latencyDist;
+    perf.run();
 
-    const double epsilon = 0.0000000001;
-    double prev = -1;
+    array<string, 2> titles {{ "epochs", "defer" }};
+    for (unsigned gr = 0; gr < 2; ++gr) {
+        auto dists = perf.distributions(gr);
 
-    const unsigned min = 1, max = 1;
-    unsigned attempts = 0;
-
-    while (true) {
-        auto ret = doTest(threadCount, iterations);
-
-        throughputDist.add(ret.first);
-
-        prev = latencyDist.stderr();
-        latencyDist += ret.second;
-
-        ++attempts;
-        if (attempts < min) continue;
-        if (attempts >= max) break;
-        if (std::abs(prev - latencyDist.stderr()) < epsilon)
-            break;
-    }
-
-    if (csvOutput) {
-        printf( "%d,%ld,"
-                "%.9f,%.9f,%.9f,%.9f,"
-                "%ld,%ld,%ld,%ld\n",
-                threadCount,
-                iterations,
-
-                latencyDist.min(), latencyDist.median(),
-                latencyDist.max(), latencyDist.stderr(),
-
-                static_cast<size_t>(throughputDist.min()),
-                static_cast<size_t>(throughputDist.median()),
-                static_cast<size_t>(throughputDist.max()),
-                static_cast<size_t>(throughputDist.stderr()));
-    }
-    else {
-        printf( "| th=%3d | it=%s "
-                "| s/ops=[ %s, %s, %s ] e=%s "
-                "| ops/s=[ %s, %s, %s ] e=%s\n",
-
-                threadCount,
-                fmtValue(iterations).c_str(),
-
-                fmtElapsed(latencyDist.min()).c_str(),
-                fmtElapsed(latencyDist.median()).c_str(),
-                fmtElapsed(latencyDist.max()).c_str(),
-                fmtElapsed(latencyDist.stderr()).c_str(),
-
-                fmtValue(throughputDist.min()).c_str(),
-                fmtValue(throughputDist.median()).c_str(),
-                fmtValue(throughputDist.max()).c_str(),
-                fmtValue(throughputDist.stderr()).c_str());
+        if (csvOutput) dumpCsvLine(titles[gr], thCount, itCount, dists);
+        else dumpReadableLine(titles[gr], thCount, itCount, dists);
     }
 
     return 0;

@@ -12,6 +12,9 @@
 #include <time.h>
 #include <unistd.h>
 #include <set>
+#include <functional>
+#include <future>
+#include <thread>
 #include <cstdlib>
 #include <cmath>
 
@@ -90,7 +93,7 @@ struct TimeDist
         return sum / dist.size();
     }
 
-    double stderr() const
+    double stddev() const
     {
         return std::sqrt(variance());
     }
@@ -164,6 +167,110 @@ std::string fmtValue(double value)
     snprintf(buffer.data(), buffer.size(), "%6.2f%c", value, scale);
     return std::string(buffer.data());
 }
+
+
+/******************************************************************************/
+/* PERF TEST                                                                  */
+/******************************************************************************/
+
+template<typename Context>
+struct PerfTest
+{
+    typedef std::function<void(Context&, unsigned)> TestFn;
+
+    unsigned add(const TestFn& fn, unsigned thCount, size_t itCount)
+    {
+        configs.push_back(std::make_tuple(fn, thCount, itCount));
+        return configs.size() - 1;
+    }
+
+    std::pair<TimeDist, TimeDist> distributions(unsigned gr)
+    {
+        return std::make_pair(latencies[gr], throughputs[gr]);
+    }
+
+    void run()
+    {
+        latencies.resize(configs.size());
+        throughputs.resize(configs.size());
+
+        std::vector< std::vector< std::future<double> > > futures;
+        futures.resize(configs.size());
+
+        for (size_t th = 0; th < configs.size(); ++th)
+            futures[th].reserve(std::get<1>(configs[th]));
+
+        Context ctx;
+
+        auto doTask = [&] (const TestFn& fn, unsigned itCount) -> double {
+            Timer tm;
+            fn(ctx, itCount);
+            return tm.elapsed();
+        };
+
+
+        Timer throughputTm;
+
+        // Create the threads round robin-style.
+        size_t remaining = 0;
+        do {
+            remaining = 0;
+            for (size_t th = 0; th < configs.size(); ++th) {
+                const TestFn& testFn = std::get<0>(configs[th]);
+                unsigned& thCount    = std::get<1>(configs[th]);
+                size_t itCount       = std::get<2>(configs[th]);
+
+                if (!thCount) continue;
+                remaining += --thCount;
+
+                std::packaged_task<double()> task(
+                        std::bind(doTask, testFn, itCount));
+
+                futures[th].emplace_back(std::move(task.get_future()));
+                std::thread(std::move(task)).detach();
+            }
+        } while (remaining > 0);
+
+        // Poll each futures until they become available.
+        do {
+            remaining = 0;
+            unsigned processed = 0;
+
+            for (size_t i = 0; i < futures.size(); ++i) {
+                for (size_t j = 0; j < futures[i].size(); ++j) {
+                    if (!futures[i][j].valid()) continue;
+
+                    auto ret = futures[i][j].wait_for(std::chrono::seconds(0));
+                    if (ret == std::future_status::timeout) {
+                        remaining++;
+                        continue;
+                    }
+
+                    size_t itCount = std::get<2>(configs[i]);
+                    double latency = futures[i][j].get();
+
+                    latencies[i].add(latency / itCount);
+                    throughputs[i].add(itCount / throughputTm.elapsed());
+
+                    processed++;
+                }
+            }
+
+            if (!processed)
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+
+        } while (remaining > 0);
+    }
+
+
+
+private:
+
+    std::vector< std::tuple<TestFn, unsigned, size_t> > configs;
+
+    std::vector<TimeDist> latencies;
+    std::vector<TimeDist> throughputs;
+};
 
 
 } // lockless
