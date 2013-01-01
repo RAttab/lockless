@@ -108,6 +108,64 @@ private:
 };
 
 
+/******************************************************************************/
+/* FORMAT                                                                     */
+/******************************************************************************/
+
+std::string fmtElapsed(double elapsed)
+{
+    char scale;
+
+    if (elapsed >= 1.0) scale = 's';
+
+    if (elapsed < 1.0) {
+        elapsed *= 1000.0;
+        scale = 'm';
+    }
+
+    if (elapsed < 1.0) {
+        elapsed *= 1000.0;
+        scale = 'u';
+    }
+
+    if (elapsed < 1.0) {
+        elapsed *= 1000.0;
+        scale = 'n';
+    }
+
+    std::array<char, 32> buffer;
+    snprintf(buffer.data(), buffer.size(), "%6.2f%c", elapsed, scale);
+    return std::string(buffer.data());
+}
+
+
+std::string fmtValue(double value)
+{
+    char scale;
+
+    if (value >= 1.0) scale = ' ';
+
+    if (value >= 1000.0) {
+        value /= 1000.0;
+        scale = 'k';
+    }
+
+    if (value >= 1000.0) {
+        value /= 1000.0;
+        scale = 'm';
+    }
+
+    if (value >= 1000.0) {
+        value /= 1000.0;
+        scale = 'g';
+    }
+
+    std::array<char, 32> buffer;
+    snprintf(buffer.data(), buffer.size(), "%6.2f%c", value, scale);
+    return std::string(buffer.data());
+}
+
+
 } // lockless
 
 #endif // __lockess__test_h__
