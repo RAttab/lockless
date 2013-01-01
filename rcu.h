@@ -8,6 +8,7 @@
 #ifndef __lockless__rcu_h__
 #define __lockless__rcu_h__
 
+#include "debug.h"
 #include "log.h"
 
 #include <atomic>
@@ -63,7 +64,7 @@ struct Rcu
         size_t oldCurrent = current.load();
         size_t oldOther = oldCurrent + 1;
 
-        GlobalLog.log(LogRcu, "ENTER", "epoch=%ld, oldCount=%ld",
+        logger.log(LogRcu, "ENTER", "epoch=%ld, oldCount=%ld",
                 oldCurrent, epochs[oldOther % 2].count.load());
 
         if (!epochs[oldOther % 2].count) {
@@ -71,7 +72,7 @@ struct Rcu
             if (current.compare_exchange_strong(oldCurrent, oldCurrent + 1))
                 oldCurrent++;
 
-            GlobalLog.log(LogRcu, "SWAP", "epoch=%ld", oldCurrent);
+            logger.log(LogRcu, "SWAP", "epoch=%ld", oldCurrent);
         }
 
         epochs[oldCurrent % 2].count++;
@@ -87,7 +88,7 @@ struct Rcu
      */
     void exit(size_t current)
     {
-        GlobalLog.log(LogRcu, "EXIT", "epoch=%ld, count=%ld",
+        logger.log(LogRcu, "EXIT", "epoch=%ld, count=%ld",
                 current, epochs[current % 2].count.load());
 
         assert(epochs[current % 2].count > 0);
@@ -136,8 +137,8 @@ struct Rcu
             entry->next.store(next = head.load());
         } while (!head.compare_exchange_weak(next, entry));
 
-        GlobalLog.log(LogRcu, "DEFER", "epoch=%ld, head=%p, next=%p",
-                oldCurrent, entry, next);
+        logger.log(LogRcu, "DEFER",
+                "epoch=%ld, head=%p, next=%p", oldCurrent, entry, next);
 
         // Exit the epoch which allows it to be swaped again.
         epochs[oldCurrent % 2].count--;
@@ -152,7 +153,7 @@ private:
     {
         DeferEntry* entry = epochs[epoch % 2].deferList.exchange(nullptr);
 
-        GlobalLog.log(LogRcu, "DO_DEFER", "epoch=%ld, head=%p", epoch, entry);
+        logger.log(LogRcu, "DO_DEFER", "epoch=%ld, head=%p", epoch, entry);
 
         while (entry) {
             entry->fn();
@@ -188,6 +189,10 @@ private:
 
     std::atomic<size_t> current;
     Epoch epochs[2];
+
+public:
+
+    DebuggingLog<1024, DebugRcu>::type logger;
 };
 
 

@@ -215,6 +215,45 @@ private:
 
 
 /******************************************************************************/
+/* DEBUG LOG                                                                  */
+/******************************************************************************/
+
+template<>
+struct Log<0>
+{
+    Log() {}
+
+    template<typename LogFirst, typename LogSecond>
+    Log(LogFirst&&, LogSecond&&) {}
+
+    Log(const Log&) = delete;
+    Log& operator=(const Log&) = delete;
+
+    size_t size() const { return 0; }
+
+    template<typename Title, typename Msg>
+    void log(LogType, size_t, Title&&, Msg&&)
+    {}
+
+    template<typename Title, typename Msg>
+    void log(LogType, Title&&, Msg&&)
+    {}
+
+    template<typename Title, typename... Args>
+    void log(LogType, Title&&, const std::string&, Args&&...)
+    {}
+
+    std::vector<LogEntry> dump() { return {}; }
+};
+
+template<size_t Size, bool flag>
+struct DebuggingLog
+{
+    typedef Log<flag ? Size : 0> type;
+};
+
+
+/******************************************************************************/
 /* LOG SINK                                                                   */
 /******************************************************************************/
 
@@ -233,7 +272,7 @@ void logToStream(
 
  */
 template<typename Log>
-void logToStream(Log&& log, std::ostream& stream = std::cerr)
+void logToStream(Log& log, std::ostream& stream = std::cerr)
 {
     logToStream(log.dump(), stream);
 }

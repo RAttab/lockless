@@ -8,6 +8,8 @@
 #define BOOST_TEST_MAIN
 #define BOOST_TEST_DYN_LINK
 
+// #define LOCKLESS_RCU_DEBUG 1
+
 #include "rcu.h"
 
 #include <boost/test/unit_test.hpp>
