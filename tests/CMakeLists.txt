@@ -10,6 +10,9 @@ add_executable(rcu_test rcu_test.cpp)
 target_link_libraries(rcu_test lockless_log boost_unit_test_framework)
 add_test(rcu rcu_test)
 
+add_executable(rcu_perf_test rcu_perf_test.cpp)
+target_link_libraries(rcu_perf_test lockless_log)
+
 add_executable(log_test log_test.cpp)
 target_link_libraries(log_test lockless_log boost_unit_test_framework)
 add_test(log log_test)
