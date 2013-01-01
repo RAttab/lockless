@@ -168,14 +168,10 @@ struct Log
              templates.
      */
     template<typename Title, typename... Args>
-    void log(
-            LogType type,
-            Title&& title,
-            const std::string& format,
-            Args&&... args)
+    void log(LogType type, Title&& title, const std::string& fmt, Args&&... args)
     {
         std::array<char, 256> buffer;
-        snprintf(buffer.data(), buffer.size(), format.c_str(), args...);
+        snprintf(buffer.data(), buffer.size(), fmt.c_str(), args...);
         log(type, std::forward<Title>(title), std::string(buffer.data()));
     }
 
