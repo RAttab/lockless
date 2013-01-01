@@ -14,6 +14,7 @@
 #include <array>
 #include <vector>
 #include <string>
+#include <algorithm>
 #include <iostream>
 
 namespace lockless {
@@ -65,7 +66,7 @@ struct LogEntry
         return Clock<size_t>::compare(this->tick, other.tick) < 0;
     }
 
-    bool operator= (const LogEntry& other) const
+    bool operator== (const LogEntry& other) const
     {
         return type == other.type &&
             tick == other.tick &&
@@ -194,9 +195,13 @@ struct Log
             LogEntry* entry = logs[index].exchange(nullptr);
             if (!entry) continue;
 
-            dump.push_back(*entry);
+            dump.emplace_back(std::move(*entry));
             delete entry;
         }
+
+        // We can't be sure that start will still be the head once we start
+        // reading or that a series of log won't overtake our dumps.
+        std::sort(dump.begin(), dump.end());
 
         return dump;
     }
