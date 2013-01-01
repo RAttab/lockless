@@ -51,6 +51,9 @@ struct Rcu
         doDeferred(1);
     }
 
+    Rcu(const Rcu&) = delete;
+    Rcu& operator=(const Rcu&) = delete;
+
 
     /* Blah
 
