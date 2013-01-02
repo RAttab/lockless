@@ -67,7 +67,7 @@ struct Rcu
         size_t oldCurrent = current.load();
         size_t oldOther = oldCurrent + 1;
 
-        logger.log(LogRcu, "ENTER", "epoch=%ld, oldCount=%ld",
+        log.log(LogRcu, "ENTER", "epoch=%ld, oldCount=%ld",
                 oldCurrent, epochs[oldOther % 2].count.load());
 
         if (!epochs[oldOther % 2].count) {
@@ -75,7 +75,7 @@ struct Rcu
             if (current.compare_exchange_strong(oldCurrent, oldCurrent + 1))
                 oldCurrent++;
 
-            logger.log(LogRcu, "SWAP", "epoch=%ld", oldCurrent);
+            log.log(LogRcu, "SWAP", "epoch=%ld", oldCurrent);
         }
 
         epochs[oldCurrent % 2].count++;
@@ -91,7 +91,7 @@ struct Rcu
      */
     void exit(size_t current)
     {
-        logger.log(LogRcu, "EXIT", "epoch=%ld, count=%ld",
+        log.log(LogRcu, "EXIT", "epoch=%ld, count=%ld",
                 current, epochs[current % 2].count.load());
 
         assert(epochs[current % 2].count > 0);
@@ -140,7 +140,7 @@ struct Rcu
             entry->next.store(next = head.load());
         } while (!head.compare_exchange_weak(next, entry));
 
-        logger.log(LogRcu, "DEFER",
+        log.log(LogRcu, "DEFER",
                 "epoch=%ld, head=%p, next=%p", oldCurrent, entry, next);
 
         // Exit the epoch which allows it to be swaped again.
@@ -156,7 +156,7 @@ private:
     {
         DeferEntry* entry = epochs[epoch % 2].deferList.exchange(nullptr);
 
-        logger.log(LogRcu, "DO_DEFER", "epoch=%ld, head=%p", epoch, entry);
+        log.log(LogRcu, "DO_DEFER", "epoch=%ld, head=%p", epoch, entry);
 
         while (entry) {
             entry->fn();
@@ -195,7 +195,8 @@ private:
 
 public:
 
-    DebuggingLog<1024, DebugRcu>::type logger;
+    DebuggingLog<1024, DebugRcu>::type log;
+
 };
 
 

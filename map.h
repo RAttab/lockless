@@ -278,6 +278,11 @@ private:
     Rcu rcu;
     std::atomic<size_t> elem;
     std::atomic<Table*> table;
+
+public:
+
+    DebuggingLog<1024, DebugMap>::type log;
+
 };
 
 } // namespace lockless

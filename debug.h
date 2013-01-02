@@ -23,10 +23,15 @@ namespace lockless {
 #   define LOCKLESS_RCU_DEBUG 0
 #endif
 
+#ifndef LOCKLESS_MAP_DEBUG
+#   define LOCKLESS_MAP_DEBUG 0
+#endif
+
 enum DebugFlags
 {
     DebugLog = LOCKLESS_LOG_DEBUG,
     DebugRcu = LOCKLESS_RCU_DEBUG,
+    DebugMap = LOCKLESS_MAP_DEBUG,
 };
 
 
