@@ -14,6 +14,7 @@
 #include "utils.h"
 
 #include <atomic>
+#include <memory>
 #include <cassert>
 #include <cstdlib>
 
@@ -29,7 +30,7 @@ namespace lockless {
 template<
     typename Key,
     typename Value,
-    typename Hash = std::hash<K>,
+    typename Hash = std::hash<Key>,
     typename MKey = MagicValue<Key>,
     typename MValue = MagicValue<Value> >
 struct Map
@@ -38,10 +39,10 @@ struct Map
 private:
 
     typedef details::Atomizer<Key> KeyAtomizer;
-    typedef KeyAtomizer::type KeyAtom;
+    typedef typename KeyAtomizer::type KeyAtom;
 
     typedef details::Atomizer<Value> ValueAtomizer;
-    typedef ValueAtomizer::type ValueAtom;
+    typedef typename ValueAtomizer::type ValueAtom;
 
     enum DeallocAtom
     {
@@ -52,6 +53,11 @@ private:
         DeallocBoth = DeallocKey | DeallocValue,
     };
 
+    DeallocAtom clearDeallocFlag(DeallocAtom dealloc, DeallocAtom flag)
+    {
+        return static_cast<DeallocAtom>(dealloc & ~flag);
+    }
+
 public:
 
     /* Blah
@@ -59,7 +65,7 @@ public:
        Exception Safety: Only throws on calls to new.
      */
     Map(size_t initialSize = 0, const Hash& hashFn = Hash()) :
-        hashFn(hashFn), size(0), table(0),
+        hashFn(hashFn), elem(0), table(0)
     {
         resize(adjustCapacity(initialSize));
     }
@@ -70,7 +76,7 @@ public:
 
        Exception Safety: Does not throw.
      */
-    size_t size() const { return size.load(); }
+    size_t size() const { return elem.load(); }
     size_t capacity() const { return newestTable()->capacity; }
 
     /* Blah
@@ -116,7 +122,7 @@ public:
 
         bool success = insertImpl(
                 table.load(), hash, key, keyAtom, valueAtom, DeallocBoth);
-        if (success) size++;
+        if (success) elem++;
 
         return success;
     }
@@ -151,7 +157,7 @@ public:
         RcuGuard guard(rcu);
 
         auto result = removeImpl(table.load(), hashFn(key), key);
-        if (result.first) size--;
+        if (result.first) elem--;
 
         return result;
     }
@@ -185,12 +191,12 @@ private:
             size_t size = sizeof(capacity) + sizeof(next) + sizeof(prev);
             size += sizeof(Bucket) * capacity;
 
-            Table* table = std::malloc(size);
+            Table* table = static_cast<Table*>(std::malloc(size));
             table->capacity = capacity;
             table->next.store(nullptr);
             table->prev = nullptr;
 
-            for (size_t i = 0; i < newCapacity; ++i)
+            for (size_t i = 0; i < capacity; ++i)
                 table->buckets[i].init();
 
             return table;
@@ -203,6 +209,8 @@ private:
         size_t capacity = 1ULL << 8;
         while(capacity < newCapacity)
             capacity *= 2;
+
+        return capacity;
     }
 
     Table* newestTable() const
@@ -228,17 +236,21 @@ private:
 
     void deallocAtomDefer(DeallocAtom state, KeyAtom keyAtom, ValueAtom valueAtom)
     {
-        rcu.defer([=] { deallocAtomNow(state, keyAtom, valueAtom); });
+        // Don't bother with defer work if it's a no-op
+        if (details::IsAtomic<Key>::value && details::IsAtomic<Value>::value)
+            return;
+
+        rcu.defer([=] { this->deallocAtomNow(state, keyAtom, valueAtom); });
     }
 
 
     // map.tcc functions.
 
-    bool doMoveMode(Table* t, Bucket& bucket);
+    bool doMoveBucket(Table* t, Bucket& bucket);
     void moveBucket(Table* dest, Bucket& src);
 
     void doResize(Table* t, size_t tombstones);
-    Table* resizeImpl(size_t newCapacity, bool force = false);
+    void resizeImpl(size_t newCapacity, bool force = false);
 
     std::pair<bool, Value> findImpl(
             Table* t, const size_t hash, const Key& key);
@@ -251,7 +263,7 @@ private:
             const ValueAtom valueAtom,
             DeallocAtom dealloc);
 
-    bool compareReplaceImpl(
+    bool compareExchangeImpl(
             Table* t,
             const size_t hash,
             const Key& key,
@@ -264,7 +276,7 @@ private:
 
     Hash hashFn;
     Rcu rcu;
-    std::atomic<size_t> size;
+    std::atomic<size_t> elem;
     std::atomic<Table*> table;
 };
 

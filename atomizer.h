@@ -41,25 +41,25 @@ struct Atomizer<T, true>
 
     static type alloc(T value)
     {
-        Converter<T> conv;
+        Converter conv;
         conv.value = value;
         return conv.atom;
     }
 
     static T load(type atom)
     {
-        Converter<T> conv;
+        Converter conv;
         conv.atom = atom;
         return conv.value;
     }
 
-    static void dealloc(type atom) {}
+    static void dealloc(type) {}
 
 private:
 
     Atomizer()
     {
-        std::assert(std::atomic<type>().is_lock_free());
+        assert(std::atomic<type>().is_lock_free());
         assert(std::atomic<type>().is_lock_free());
     }
 
@@ -94,13 +94,13 @@ struct Atomizer<T, false>
         return *atom;
     }
 
-    static void dealloc(type atom) { delete T; }
+    static void dealloc(type atom) { delete atom; }
 
 private:
 
     Atomizer()
     {
-        std::assert(std::atomic<type>().is_lock_free());
+        assert(std::atomic<type>().is_lock_free());
     }
 
 };

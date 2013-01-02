@@ -16,3 +16,7 @@ target_link_libraries(rcu_perf_test lockless_log)
 add_executable(log_test log_test.cpp)
 target_link_libraries(log_test lockless_log boost_unit_test_framework)
 add_test(log log_test)
+
+add_executable(map_test map_test.cpp)
+target_link_libraries(map_test lockless_log boost_unit_test_framework)
+add_test(map map_test)

@@ -66,23 +66,23 @@ namespace details {
 template<typename Magic, typename Atom>
 bool isValue(Atom atom)
 {
-    return atom & ~(Magic::mask0 | Magic::mask1) == atom;
+    return (atom & ~(Magic::mask0 | Magic::mask1)) == atom;
 }
 
 template<typename Magic, typename Atom>
 bool isEmpty(Atom atom)
 {
-    return atom & (Magic::mask0 | Magic::mask1) == Magic::mask0;
+    return (atom & (Magic::mask0 | Magic::mask1)) == Magic::mask0;
 }
 
 template<typename Magic, typename Atom>
 bool isTombstone(Atom atom)
 {
-    return atom & (Magic::mask0 | Magic::mask1) == Magic::mask1;
+    return (atom & (Magic::mask0 | Magic::mask1)) == Magic::mask1;
 }
 
 template<typename Magic, typename Atom>
-Atom setTombstone(Atom atom)
+Atom setTombstone(Atom)
 {
     return Magic::mask1;
 }
@@ -90,8 +90,8 @@ Atom setTombstone(Atom atom)
 template<typename Magic, typename Atom>
 bool isMoving(Atom atom)
 {
-    Atom::type mask = Magic::mask0 | Magic::mask1;
-    return atom & mask == mask;
+    Atom mask = Magic::mask0 | Magic::mask1;
+    return (atom & mask) == mask;
 }
 
 template<typename Magic, typename Atom>
@@ -118,9 +118,10 @@ enum Policy
 /* MAP                                                                        */
 /******************************************************************************/
 
-template<typename K, typename V, typename H, typename MK, typename MV>
+template<
+    typename Key, typename Value, typename Hash, typename MKey, typename MValue>
 bool
-Map<K,V,H,MK,MV>::
+Map<Key, Value, Hash, MKey, MValue>::
 doMoveBucket(Table* t, Bucket& bucket)
 {
     if (!t->isResizing()) return false;
@@ -161,19 +162,20 @@ doMoveBucket(Table* t, Bucket& bucket)
 
    Fun!
  */
-template<typename K, typename V, typename H, typename MK, typename MV>
+template<
+    typename Key, typename Value, typename Hash, typename MKey, typename MValue>
 void
-Map<K,V,H,MK,MV>::
+Map<Key, Value, Hash, MKey, MValue>::
 moveBucket(Table* dest, Bucket& src)
 {
     using namespace details;
 
     // 1. Read the KV pair in src and prepare them for moving.
 
-    KeyAtom oldKeyAtom = src.key.load();
+    KeyAtom oldKeyAtom = src.keyAtom.load();
     KeyAtom keyAtom;
     do {
-        if (isTombstone<MKey>(oldKeyAtom)) return dest;
+        if (isTombstone<MKey>(oldKeyAtom)) return;
         if (isMoving<MKey>(oldKeyAtom)) {
             keyAtom = oldKeyAtom;
             break;
@@ -183,13 +185,13 @@ moveBucket(Table* dest, Bucket& src)
             keyAtom = setTombstone<MKey>(oldKeyAtom);
         else keyAtom = setMoving<MKey>(oldKeyAtom);
 
-    } while(!src.key.compare_exchange_weak(oldKeyAtom, keyAtom));
+    } while(!src.keyAtom.compare_exchange_weak(oldKeyAtom, keyAtom));
 
 
-    ValueAtom oldValueAtom = src.value.load();
+    ValueAtom oldValueAtom = src.valueAtom.load();
     ValueAtom valueAtom;
     do {
-        if (isTombstone<MValue>(oldValueAtom)) return dest;
+        if (isTombstone<MValue>(oldValueAtom)) return;
         if (isMoving<MValue>(oldValueAtom)) {
             valueAtom = oldValueAtom;
             break;
@@ -199,44 +201,39 @@ moveBucket(Table* dest, Bucket& src)
                 valueAtom = setTombstone<MValue>(oldValueAtom);
         else keyAtom = setMoving<MValue>(oldValueAtom);
 
-    } while (!src.value.compare_exchange_weak(oldValueAtom, valueAtom));
+    } while (!src.valueAtom.compare_exchange_weak(oldValueAtom, valueAtom));
 
 
-    // If we're dealing with a partial insert just tombstone the whole thing.
-    if (isMoving<MKey>(keyAtom) && isTombstone<MValue>(valueAtom))
-        goto doTombstone; // Let the velociraptor strike me!
-
-    // We only check value because that's the last one to be written.
-    if (isTombstone<MValue>(valueAtom)) return dest;
-
-    // The move is done so skip to step 3. to help the cleanup.
-    if (isTombstone<MKey>(keyAtom)) goto doTombstome;
-
-    std::assert(isMoving<MKey>(keyAtom) && isMonving<MValue>(valueAtom));
+    // Move is already done, go somewhere else.
+    if (isTombstone<MKey>(keyAtom) && isTombstone<MValue>(valueAtom))
+        return;
 
 
     // 2. Move the value to the dest table.
+    if (isMoving<MKey>(keyAtom) && isMoving<MValue>(valueAtom)) {
 
-    keyAtom = clearMarks(keyAtom);
-    valueAtom = clearMarks(valueAtom);
-    size_t hash = hashFn(KeyAtomizer::load(keyAtom));
+        keyAtom = clearMarks<MKey>(keyAtom);
+        valueAtom = clearMarks<MValue>(valueAtom);
 
-    // Regardless of the return value of this function, the KV will have been
-    // moved to a new table. Either because we did it or because another thread
-    // beat us to it. In either cases, the KV was moved so we're happy.
-    insertImpl(dest, hash, key, keyAtom, valueAtom, DeallocNone);
+        Key key = KeyAtomizer::load(keyAtom);
+        size_t hash = hashFn(key);
+
+        // Regardless of the return value of this function, the KV will have
+        // been moved to a new table. Either because we did it or because
+        // another thread beat us to it. In either cases, the KV was moved so
+        // we're happy.
+        insertImpl(dest, hash, key, keyAtom, valueAtom, DeallocNone);
+    }
 
 
     // 3. Kill the values in the src table.
 
-  doTombstone:
-
     // The only possible transition out of the moving state is to tombstone so
     // we don't need any RMW ops here.
-    src.key.store(setTombstone<MKey>(keyAtom));
-    src.value.store(setTombstone<MValue>(valueAtom));
+    src.keyAtom.store(setTombstone<MKey>(keyAtom));
+    src.valueAtom.store(setTombstone<MValue>(valueAtom));
 
-    return dest;
+    return;
 }
 
 
@@ -273,13 +270,14 @@ moveBucket(Table* dest, Bucket& src)
    the chain or it was never in there to begin with.
 
  */
-template<typename K, typename V, typename H, typename MK, typename MV>
+template<
+    typename Key, typename Value, typename Hash, typename MKey, typename MValue>
 bool
-Map<K,V,H,MK,MV>::
+Map<Key, Value, Hash, MKey, MValue>::
 insertImpl(
         Table* t,
-        const Key& key,
         const size_t hash,
+        const Key& key,
         const KeyAtom keyAtom,
         const ValueAtom valueAtom,
         DeallocAtom dealloc)
@@ -295,7 +293,7 @@ insertImpl(
 
         // 1. Set the key.
 
-        KeyAtom bucketKeyAtom = bucket.key.load();
+        KeyAtom bucketKeyAtom = bucket.keyAtom.load();
 
         if (isTombstone<MKey>(bucketKeyAtom)) {
             tombstones++;
@@ -316,7 +314,7 @@ insertImpl(
         // If the key in the bucket is a match we can skip this step. The
         // idea is if we have 2+ concurrent inserts for the same key then
         // the winner is determined when writing the value.
-        else if (!bucket.key.compare_exchange_weak(bucketKeyAtom, keyAtom)) {
+        else if (!bucket.keyAtom.compare_exchange_weak(bucketKeyAtom, keyAtom)){
             // Someone beat us; recheck the bucket to see if our key wasn't
             // involved.
             --i;
@@ -325,12 +323,12 @@ insertImpl(
 
         // If we inserted our key in the table then don't dealloc it. Even if
         // the call fails!
-        else dealloc &= ~DeallocKey;
+        else dealloc = clearDeallocFlag(dealloc, DeallocKey);
 
 
         // 2. Set the value.
 
-        ValueAtom bucketValueAtom = bucket.value.load();
+        ValueAtom bucketValueAtom = bucket.valueAtom.load();
 
         bool dbg_once = false;
 
@@ -349,16 +347,17 @@ insertImpl(
             }
 
             // Another insert beat us to it.
-            if (!isEmpty<mValue>(bucketValueAtom)) {
+            if (!isEmpty<MValue>(bucketValueAtom)) {
                 deallocAtomNow(dealloc, keyAtom, valueAtom);
                 return false;
             }
 
-            std::assert(!dbg_once);
+            assert(!dbg_once);
             dbg_once = true;
 
-            if (bucket.key.compare_exchange_strong(bucketValueAtom, valueAtom)){
-                deallocAtomNow(dealloc & ~DeallocValue, keyAtom, valueAtom);
+            if (bucket.keyAtom.compare_exchange_strong(bucketValueAtom, valueAtom)){
+                DeallocAtom newFlag = clearDeallocFlag(dealloc, DeallocValue);
+                deallocAtomNow(newFlag, keyAtom, valueAtom);
                 return true;
             }
         }
@@ -380,9 +379,10 @@ insertImpl(
    bucket. Same will be true for all ops that must first find the key before
    modifying it.
  */
-template<typename K, typename V, typename H, typename MK, typename MV>
+template<
+    typename Key, typename Value, typename Hash, typename MKey, typename MValue>
 auto
-Map<K,V,H,MK,MV>::
+Map<Key, Value, Hash, MKey, MValue>::
 findImpl(Table* t, const size_t hash, const Key& key)
     -> std::pair<bool, Value>
 {
@@ -397,7 +397,7 @@ findImpl(Table* t, const size_t hash, const Key& key)
 
         // 1. Check the key
 
-        KeyAtom keyAtom = bucket.key.load();
+        KeyAtom keyAtom = bucket.keyAtom.load();
 
         if (isTombstone<MKey>(keyAtom)) {
             tombstones++;
@@ -418,7 +418,7 @@ findImpl(Table* t, const size_t hash, const Key& key)
 
         // 2. Check the value.
 
-        ValueAtom valueAtom = bucket.value.load();
+        ValueAtom valueAtom = bucket.valueAtom.load();
 
         // We might be in the middle of a move op so try the bucket again so
         // that we'll eventually prob the next table if there's one.
@@ -435,9 +435,9 @@ findImpl(Table* t, const size_t hash, const Key& key)
         // In the middle of a move but since we don't need to modify the value
         // we can just play it greedy and return right away.
         if (isMoving<MValue>(valueAtom))
-            valueAtom = clearMarks(valueAtom);
+            valueAtom = clearMarks<MValue>(valueAtom);
 
-        return make_pair(true, ValueAtomizer::load(valueAtom));
+        return std::make_pair(true, ValueAtomizer::load(valueAtom));
     }
 
 
@@ -450,10 +450,11 @@ findImpl(Table* t, const size_t hash, const Key& key)
 /* Straight forward implementation. Find the key, compare and exchange the
    value.
  */
-template<typename K, typename V, typename H, typename MK, typename MV>
+template<
+    typename Key, typename Value, typename Hash, typename MKey, typename MValue>
 bool
-Map<K,V,H,MK,MV>::
-compareReplaceImpl(
+Map<Key, Value, Hash, MKey, MValue>::
+compareExchangeImpl(
         Table* t,
         const size_t hash,
         const Key& key,
@@ -471,7 +472,7 @@ compareReplaceImpl(
 
         // 1. Find the key
 
-        KeyAtom keyAtom = bucket.key.load();
+        KeyAtom keyAtom = bucket.keyAtom.load();
 
         if (isTombstone<MKey>(keyAtom)) {
             tombstones++;
@@ -491,7 +492,7 @@ compareReplaceImpl(
 
         // 2. Replace the value.
 
-        ValueAtom valueAtom = bucket.value.load();
+        ValueAtom valueAtom = bucket.valueAtom.load();
 
         while (true) {
 
@@ -516,7 +517,7 @@ compareReplaceImpl(
             }
 
             // make the exchange.
-            if (bucket.value.compare_exchange_weak(valueAtom, desired)) {
+            if (bucket.valueAtom.compare_exchange_weak(valueAtom, desired)) {
                 // The value comes from the table so defer the dealloc.
                 rcu.defer([=] { ValueAtomizer::dealloc(valueAtom); });
                 return true;
@@ -526,7 +527,7 @@ compareReplaceImpl(
 
     // The key is definetively not in this table, try the next.
     doResize(t, tombstones);
-    return compareAndReplaceImpl(t->next.load(), hash, key, expected, desired);
+    return compareExchangeImpl(t->next.load(), hash, key, expected, desired);
 }
 
 /* This op is a little more tricky and proceeds in 3 phases: find the key, make
@@ -537,9 +538,10 @@ compareReplaceImpl(
    we're sure that the KV pair was fully inserted. We also have to be careful
    with replace op that may change the value after we've tombstoned the key.
  */
-template<typename K, typename V, typename H, typename MK, typename MV>
+template<
+    typename Key, typename Value, typename Hash, typename MKey, typename MValue>
 auto
-Map<K,V,H,MK,MV>::
+Map<Key, Value, Hash, MKey, MValue>::
 removeImpl(Table* t, const size_t hash, const Key& key)
     -> std::pair<bool, Value>
 {
@@ -554,7 +556,7 @@ removeImpl(Table* t, const size_t hash, const Key& key)
 
         // 1. Find the key
 
-        KeyAtom keyAtom = bucket.key.load();
+        KeyAtom keyAtom = bucket.keyAtom.load();
 
         if (isTombstone<MKey>(keyAtom)) {
             tombstones++;
@@ -564,14 +566,14 @@ removeImpl(Table* t, const size_t hash, const Key& key)
             --i;
             continue;
         }
-        if (isEmpty<MKey>(keyAtom)) return make_pair<false, Value()>;
+        if (isEmpty<MKey>(keyAtom)) return std::make_pair(false, Value());
 
         if (key != KeyAtomizer::load(keyAtom)) continue;
 
 
         // 2. Check the value
 
-        ValueAtom valueAtom = bucket.value.load();
+        ValueAtom valueAtom = bucket.valueAtom.load();
 
         // We may be in the middle of a move so try the bucket again.
         if (isTombstone<MValue>(valueAtom) || isMoving<MValue>(valueAtom)) {
@@ -579,7 +581,7 @@ removeImpl(Table* t, const size_t hash, const Key& key)
             continue;
         }
         // Value not fully inserted yet; just bail.
-        if (isEmpty<MValue>(valueAtom)) return make_pair(false, Value());
+        if (isEmpty<MValue>(valueAtom)) return std::make_pair(false, Value());
 
 
         // 3. Tombstone the bucket
@@ -587,7 +589,7 @@ removeImpl(Table* t, const size_t hash, const Key& key)
         // Tombstone the key. If we're in a race with another op then just try
         // the bucket again.
         KeyAtom newKeyAtom = setTombstone<MKey>(keyAtom);
-        if (!bucket.key.compare_exchange(keyAtom, newKeyAtom)) {
+        if (!bucket.keyAtom.compare_exchange_strong(keyAtom, newKeyAtom)) {
             --i;
             continue;
         }
@@ -595,13 +597,13 @@ removeImpl(Table* t, const size_t hash, const Key& key)
         // Reload the value from the bucket in case there's a lagging replace
         // op. Also prevent any further replace op by tombstoning the value.
         ValueAtom newValueAtom = setTombstone<MValue>(valueAtom);
-        valueAtom = bucket.value.exchange(newValueAtom);
+        valueAtom = bucket.valueAtom.exchange(newValueAtom);
 
         // The atoms come from the table so defer the delete in case someone's
         // still them.
         deallocAtomDefer(DeallocBoth, keyAtom, valueAtom);
 
-        return make_pair(true, ValueAtomizer::load(valueAtom));
+        return std::make_pair(true, ValueAtomizer::load(valueAtom));
     }
 
     // The key is definetively not in this table, try the next.
@@ -611,9 +613,10 @@ removeImpl(Table* t, const size_t hash, const Key& key)
 
 
 /* Implements the resize policy for the table. */
-template<typename K, typename V, typename H, typename MK, typename MV>
+template<
+    typename Key, typename Value, typename Hash, typename MKey, typename MValue>
 void
-Map<K,V,H,MK,MV>::
+Map<Key, Value, Hash, MKey, MValue>::
 doResize(Table* t, size_t tombstones)
 {
     if (!t->isResizing()) {
@@ -625,10 +628,11 @@ doResize(Table* t, size_t tombstones)
 
 
 /* Pretty straight forward and no really funky logic involved here. */
-template<typename K, typename V, typename H, typename MK, typename MV>
-auto
-Map<K,V,H,MK,MV>::
-resizeImpl(size_t newCapacity, bool force = false) -> Table*
+template<
+    typename Key, typename Value, typename Hash, typename MKey, typename MValue>
+void
+Map<Key, Value, Hash, MKey, MValue>::
+resizeImpl(size_t newCapacity, bool force)
 {
     Table* oldTable = table.load();
 
@@ -640,7 +644,7 @@ resizeImpl(size_t newCapacity, bool force = false) -> Table*
     do {
         if (oldTable) {
             if (newCapacity < oldTable->capacity) return;
-            if (newCapcity == oldTable->capacity) {
+            if (newCapacity == oldTable->capacity) {
                 if (!force) return;
                 // Looking do to a cleanup but someone else is already doing it.
                 if (oldTable->isResizing()) return;
@@ -657,8 +661,9 @@ resizeImpl(size_t newCapacity, bool force = false) -> Table*
 
         safeNewTable->prev = oldTable ? &oldTable->next : &table;
 
-        done = safeNewTable->prev->compare_and_exchange_weak(
-                nullptr, safeNewTable.get());
+        Table* prevTable = nullptr;
+        done = safeNewTable->prev->compare_exchange_weak(
+                prevTable, safeNewTable.get());
 
     } while(!done);
 
@@ -674,15 +679,13 @@ resizeImpl(size_t newCapacity, bool force = false) -> Table*
 
     // 3. Get rid of oldTable.
 
-    std::assert(oldTable->prev);
-    std::assert(oldTable->prev->load() == oldTable);
+    assert(oldTable->prev);
+    assert(oldTable->prev->load() == oldTable);
 
     // Remove oldTable from the list. We can't use newTable to do this because
     // it to might have been resized and removed from the list.
-    oldTable->prev.store(oldTable->next.load());
+    oldTable->prev->store(oldTable->next.load());
     rcu.defer([=] { std::free(oldTable); });
-
-    return newTable;
 }
 
 } // lockless

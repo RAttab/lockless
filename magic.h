@@ -14,6 +14,22 @@
 
 namespace lockless {
 
+
+/******************************************************************************/
+/* UTILS                                                                      */
+/******************************************************************************/
+
+namespace details {
+
+template<typename T>
+constexpr T msbMask(unsigned pos)
+{
+    return T(1ULL << ((sizeof(T) * 8) - (1 + pos)));
+}
+
+} // namespace details
+
+
 /******************************************************************************/
 /* MAGIC VALUE                                                                */
 /******************************************************************************/
@@ -21,13 +37,12 @@ namespace lockless {
 /* Can be overidden by the user for a given type. */
 template<typename T> struct MagicValue {};
 
-
 /* Grab the most-significant bits which are unlikely to be used. */
 template<>
 struct MagicValue<size_t>
 {
-    static T mask0 = 1ULL << 63;
-    static T mask1 = 1ULL << 62;
+    static const size_t mask0 = details::msbMask<size_t>(0);
+    static const size_t mask1 = details::msbMask<size_t>(1);
 };
 
 
@@ -37,16 +52,16 @@ struct MagicValue<size_t>
 template<typename T>
 struct MagicValue<T*>
 {
-    static T* mask0 = reinterpret_cast<T*>(1);
-    static T* mask1 = reinterpret_cast<T*>(2);
+    static const T* mask0 = reinterpret_cast<T*>(1);
+    static const T* mask1 = reinterpret_cast<T*>(2);
 };
 
 /* Since we can't steal alignment bits, just great the most-significant bits. */
 template<>
 struct MagicValue<char*>
 {
-    static T* mask0 = reinterpret_cast<T*>(1) << (sizeof(T*) * 8 - 1);
-    static T* mask1 = reinterpret_cast<T*>(1) << (sizeof(T*) * 8 - 2);
+    static constexpr char* mask0 = details::msbMask<char*>(0);
+    static constexpr char* mask1 = details::msbMask<char*>(1);
 };
 
 } // lockless
