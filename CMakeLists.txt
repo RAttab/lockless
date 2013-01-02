@@ -17,7 +17,7 @@ project(lockless)
 enable_testing()
 
 add_definitions("-std=c++11 -Wall -Wextra -Werror -pedantic -g -O4")
-include_directories("${PROJECT_SOURCE_DIR}")
+include_directories("${PROJECT_SOURCE_DIR}/src")
 
 link_libraries(rt)
 
@@ -43,12 +43,29 @@ endif()
 # BUILD
 #------------------------------------------------------------------------------#
 
-install(FILES utils.h clock.h log.h DESTINATION include/lockless)
-install(FILES magic.h atomizer.h    DESTINATION include/lockless)
-install(FILES rcu.h                 DESTINATION include/lockless)
-install(FILES map.h map.tcc         DESTINATION include/lockless)
+install(FILES src/utils.h src/clock.h src/log.h DESTINATION include/lockless)
+install(FILES src/magic.h src/atomizer.h        DESTINATION include/lockless)
+install(FILES src/rcu.h                         DESTINATION include/lockless)
+install(FILES src/map.h map.tcc                 DESTINATION include/lockless)
 
-add_library(lockless_log SHARED log.cpp)
+add_library(lockless_log SHARED src/log.cpp)
 install(TARGETS lockless_log DESTINATION lib)
 
-add_subdirectory(tests)
+#------------------------------------------------------------------------------#
+# TESTS
+#------------------------------------------------------------------------------#
+
+add_executable(rcu_test tests/rcu_test.cpp)
+target_link_libraries(rcu_test lockless_log boost_unit_test_framework)
+add_test(rcu rcu_test)
+
+add_executable(rcu_perf_test tests/rcu_perf_test.cpp)
+target_link_libraries(rcu_perf_test lockless_log)
+
+add_executable(log_test tests/log_test.cpp)
+target_link_libraries(log_test lockless_log boost_unit_test_framework)
+add_test(log log_test)
+
+add_executable(map_test tests/map_test.cpp)
+target_link_libraries(map_test lockless_log boost_unit_test_framework)
+add_test(map map_test)
