@@ -23,11 +23,13 @@
 using namespace std;
 using namespace lockless;
 
+
 BOOST_AUTO_TEST_CASE(smoke_test)
 {
     Rcu rcu;
     RcuGuard guard{rcu};
 }
+
 
 BOOST_AUTO_TEST_CASE(epoch_test)
 {
@@ -56,6 +58,7 @@ BOOST_AUTO_TEST_CASE(epoch_test)
     rcu.exit(e4);
     rcu.exit(e5);
 }
+
 
 BOOST_AUTO_TEST_CASE(simple_defer_test)
 {
@@ -86,6 +89,7 @@ BOOST_AUTO_TEST_CASE(simple_defer_test)
     rcu.exit(e3);
 }
 
+
 BOOST_AUTO_TEST_CASE(complex_defer_test)
 {
     Rcu rcu;
@@ -109,6 +113,7 @@ BOOST_AUTO_TEST_CASE(complex_defer_test)
     rcu.exit(counters.size());
 }
 
+
 BOOST_AUTO_TEST_CASE(destructor_defer_test)
 {
     unsigned counter = 0;
@@ -126,6 +131,7 @@ BOOST_AUTO_TEST_CASE(destructor_defer_test)
 
     BOOST_CHECK_EQUAL(counter, 2);
 }
+
 
 BOOST_AUTO_TEST_CASE(fuzz_test)
 {
@@ -186,11 +192,12 @@ BOOST_AUTO_TEST_CASE(fuzz_test)
         BOOST_CHECK_EQUAL(counters[exp.first], exp.second);
 }
 
+
 BOOST_AUTO_TEST_CASE(simple_parallel_test)
 {
     enum {
-        Threads = 256,
-        Iterations = 1000,
+        Threads = 8,
+        Iterations = 10000,
     };
 
     array<atomic<size_t>, Threads> counters;
@@ -204,20 +211,18 @@ BOOST_AUTO_TEST_CASE(simple_parallel_test)
                 RcuGuard guard(rcu);
                 rcu.defer([&, id] { counters[id]++; });
             }
+            return 0;
         };
 
-        array<unique_ptr<thread>, Threads> threads;
-
-        for (size_t id = 0; id < Threads; ++id)
-            threads[id].reset(new thread(bind(doThread, id)));
-
-        for (auto& th : threads)
-            th->join();
+        ParallelTest test;
+        test.add(doThread, Threads);
+        test.run();
     }
 
     for (size_t i = 0; i < counters.size(); ++i)
         BOOST_CHECK_EQUAL(counters[i], Iterations);
 }
+
 
 BOOST_AUTO_TEST_CASE(complex_parallel_test)
 {
@@ -239,68 +244,45 @@ BOOST_AUTO_TEST_CASE(complex_parallel_test)
         void check() const { assert(value == MAGIC_VALUE); }
     };
 
-    struct Context
-    {
-        Rcu rcu;
-        array< atomic<Obj*>, Slots> slots;
-        atomic<unsigned> doneCount;
+    Rcu rcu;
+    atomic<unsigned> doneCount(0);
 
-        Context()
-        {
-            for (auto& obj : slots) obj.store(nullptr);
-            doneCount.store(0);
-        }
+    array< atomic<Obj*>, Slots> slots;
+    for (auto& obj : slots) obj.store(nullptr);
 
-        ~Context()
-        {
-            for (auto& obj : slots) {
-                if (!obj.load()) delete obj.load();
+    auto doWriteThread = [&] (unsigned) {
+        for (size_t it = 0; it < Iterations; ++it) {
+            RcuGuard guard(rcu);
+
+            for (size_t index = Slots; index > 0; --index) {
+                Obj* obj = slots[index - 1].exchange(new Obj());
+                if (obj) rcu.defer([=] { obj->check(); delete obj; });
             }
         }
 
-        void writeSlot(size_t index)
-        {
-            Obj* obj = slots[index].exchange(new Obj());
-            if (obj) rcu.defer([=] { delete obj; });
-        }
-
-        void readSlot(size_t index)
-        {
-            Obj* obj = slots[index].load();
-            if (!obj) return;
-            obj->check();
-        }
+        doneCount++;
+        return 0;
     };
 
-    auto doWriteThread = [] (Context& ctx, unsigned itCount) {
-
-        for (size_t it = 0; it < itCount; ++it) {
-            RcuGuard guard(ctx.rcu);
-
-            for (size_t index = 0; index < Slots; ++index)
-                ctx.writeSlot(index);
-
-            for (size_t index = Slots; index > 0; --index)
-                ctx.writeSlot(index - 1);
-        }
-
-        ctx.doneCount++;
-    };
-
-    auto doReadThread = [] (Context& ctx, unsigned) {
+    auto doReadThread = [&] (unsigned) {
         do {
-            RcuGuard guard(ctx.rcu);
+            RcuGuard guard(rcu);
 
-            for (size_t index = 0; index < Slots; ++index)
-                ctx.readSlot(index);
+            for (size_t index = 0; index < Slots; ++index) {
+                Obj* obj = slots[index].load();
+                if (obj) obj->check();
+            }
 
-        } while (ctx.doneCount.load() < WriteThreads);
+        } while (doneCount.load() < WriteThreads);
+        return 0;
     };
 
-    PerfTest<Context> test;
-
-    test.add(doWriteThread, WriteThreads, Iterations);
-    test.add(doReadThread, ReadThreads, Iterations);
-
+    ParallelTest test;
+    test.add(doWriteThread, WriteThreads);
+    test.add(doReadThread, ReadThreads);
     test.run();
+
+    for (auto& obj : slots) {
+        if (!obj.load()) delete obj.load();
+    }
 }

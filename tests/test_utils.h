@@ -170,6 +170,76 @@ std::string fmtValue(double value)
 
 
 /******************************************************************************/
+/* PARALLEL TEST                                                              */
+/******************************************************************************/
+
+struct ParallelTest
+{
+    typedef std::function<unsigned(unsigned)> TestFn;
+
+    void add(const TestFn& fn, unsigned thCount)
+    {
+        configs.push_back(std::make_pair(fn, thCount));
+    }
+
+    unsigned run()
+    {
+        std::vector< std::vector< std::future<unsigned> > > futures;
+        futures.resize(configs.size());
+        for (size_t th = 0; th < configs.size(); ++th)
+            futures[th].reserve(configs[th].second);
+
+        // Create the threads round robin-style.
+        size_t remaining;
+        do {
+            remaining = 0;
+            for (size_t th = 0; th < configs.size(); ++th) {
+                const TestFn& testFn = configs[th].first;
+                unsigned& thCount    = configs[th].second;
+
+                if (!thCount) continue;
+                remaining += --thCount;
+
+                std::packaged_task<unsigned()> task(std::bind(testFn, thCount));
+                futures[th].emplace_back(std::move(task.get_future()));
+                std::thread(std::move(task)).detach();
+            }
+        } while (remaining > 0);
+
+        unsigned errors = 0;
+
+        // Poll each futures until they become available.
+        do {
+            remaining = 0;
+            unsigned processed = 0;
+
+            for (size_t i = 0; i < futures.size(); ++i) {
+                for (size_t j = 0; j < futures[i].size(); ++j) {
+                    if (!futures[i][j].valid()) continue;
+
+                    auto ret = futures[i][j].wait_for(std::chrono::seconds(0));
+                    if (ret == std::future_status::timeout) {
+                        remaining++;
+                        continue;
+                    }
+
+                    errors += futures[i][j].get();
+                    processed++;
+                }
+            }
+
+            if (!processed)
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+
+        } while (remaining > 0);
+
+        return errors;
+    }
+
+    std::vector< std::pair<TestFn, unsigned> > configs;
+};
+
+/******************************************************************************/
 /* PERF TEST                                                                  */
 /******************************************************************************/
 
