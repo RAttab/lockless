@@ -11,6 +11,7 @@
 // #define LOCKLESS_RCU_DEBUG 1
 
 #include "rcu.h"
+#include "test_utils.h"
 
 #include <boost/test/unit_test.hpp>
 #include <iostream>
@@ -185,7 +186,7 @@ BOOST_AUTO_TEST_CASE(fuzz_test)
         BOOST_CHECK_EQUAL(counters[exp.first], exp.second);
 }
 
-BOOST_AUTO_TEST_CASE(parallel_test)
+BOOST_AUTO_TEST_CASE(simple_parallel_test)
 {
     enum {
         Threads = 256,
@@ -216,4 +217,90 @@ BOOST_AUTO_TEST_CASE(parallel_test)
 
     for (size_t i = 0; i < counters.size(); ++i)
         BOOST_CHECK_EQUAL(counters[i], Iterations);
+}
+
+BOOST_AUTO_TEST_CASE(complex_parallel_test)
+{
+    enum {
+        ReadThreads = 2,
+        WriteThreads = 2,
+        Iterations = 10000,
+        Slots = 100,
+    };
+
+    const uint64_t MAGIC_VALUE = 0xDEADBEEFDEADBEEFULL;
+
+    struct Obj
+    {
+        uint64_t value;
+
+        Obj() : value(MAGIC_VALUE) {}
+        ~Obj() { check(); value = 0; }
+        void check() const { assert(value == MAGIC_VALUE); }
+    };
+
+    struct Context
+    {
+        Rcu rcu;
+        array< atomic<Obj*>, Slots> slots;
+        atomic<unsigned> doneCount;
+
+        Context()
+        {
+            for (auto& obj : slots) obj.store(nullptr);
+            doneCount.store(0);
+        }
+
+        ~Context()
+        {
+            for (auto& obj : slots) {
+                if (!obj.load()) delete obj.load();
+            }
+        }
+
+        void writeSlot(size_t index)
+        {
+            Obj* obj = slots[index].exchange(new Obj());
+            if (obj) rcu.defer([=] { delete obj; });
+        }
+
+        void readSlot(size_t index)
+        {
+            Obj* obj = slots[index].load();
+            if (!obj) return;
+            obj->check();
+        }
+    };
+
+    auto doWriteThread = [] (Context& ctx, unsigned itCount) {
+
+        for (size_t it = 0; it < itCount; ++it) {
+            RcuGuard guard(ctx.rcu);
+
+            for (size_t index = 0; index < Slots; ++index)
+                ctx.writeSlot(index);
+
+            for (size_t index = Slots; index > 0; --index)
+                ctx.writeSlot(index - 1);
+        }
+
+        ctx.doneCount++;
+    };
+
+    auto doReadThread = [] (Context& ctx, unsigned) {
+        do {
+            RcuGuard guard(ctx.rcu);
+
+            for (size_t index = 0; index < Slots; ++index)
+                ctx.readSlot(index);
+
+        } while (ctx.doneCount.load() < WriteThreads);
+    };
+
+    PerfTest<Context> test;
+
+    test.add(doWriteThread, WriteThreads, Iterations);
+    test.add(doReadThread, ReadThreads, Iterations);
+
+    test.run();
 }
