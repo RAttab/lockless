@@ -48,6 +48,7 @@ BOOST_AUTO_TEST_CASE(basic_test)
 
         checkPair(map.find(i));
         checkPair(map.remove(i));
+        BOOST_CHECK(!map.compareExchange(i, i, i*i));
 
         logToStream(map.log);
     }
@@ -60,7 +61,7 @@ BOOST_AUTO_TEST_CASE(basic_test)
         cerr << fmtTitle(to_string(i)) << endl;
 
         BOOST_CHECK(map.insert(i, i));
-        BOOST_CHECK(!map.insert(i, i*i));
+        BOOST_CHECK(!map.insert(i, i+1));
         BOOST_CHECK_EQUAL(map.size(), i + 1);
 
         checkPair(map.find(i), i);
@@ -79,18 +80,18 @@ BOOST_AUTO_TEST_CASE(basic_test)
 
         uint64_t exp;
 
-        BOOST_CHECK(!map.compareExchange(i, exp = i*i, i));
+        BOOST_CHECK(!map.compareExchange(i, exp = i+1, i));
         BOOST_CHECK_EQUAL(exp, i);
-        BOOST_CHECK( map.compareExchange(i, exp = i, i*i));
+        BOOST_CHECK( map.compareExchange(i, exp = i, i+1));
 
-        checkPair(map.find(i), i*i);
+        checkPair(map.find(i), i+1);
 
-        BOOST_CHECK(!map.compareExchange(i, exp = i, i*i));
-        BOOST_CHECK_EQUAL(exp, i*i);
-        BOOST_CHECK( map.compareExchange(i, exp = i*i, i));
+        BOOST_CHECK(!map.compareExchange(i, exp = i, i+1));
+        BOOST_CHECK_EQUAL(exp, i+1);
+        BOOST_CHECK( map.compareExchange(i, exp = i+1, i));
 
         checkPair(map.find(i), i);
-        BOOST_CHECK(!map.insert(i, i*i));
+        BOOST_CHECK(!map.insert(i, i+1));
 
         logToStream(map.log);
     }
