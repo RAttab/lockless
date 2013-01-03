@@ -88,6 +88,8 @@ public:
      */
     void resize(size_t capacity)
     {
+        log.log(LogMap, "resize", "capacity=%ld", capacity);
+
         RcuGuard guard(rcu);
         resizeImpl(adjustCapacity(capacity));
     }
@@ -101,6 +103,8 @@ public:
      */
     std::pair<bool, Value> find(const Key& key)
     {
+        log.log(LogMap, "find", "key=%s", std::to_string(key).c_str());
+
         RcuGuard guard(rcu);
         return findImpl(table.load(), hashFn(key), key);
     }
@@ -114,6 +118,9 @@ public:
      */
     bool insert(const Key& key, const Value& value)
     {
+        log.log(LogMap, "insert", "key=%s, value=%s",
+                std::to_string(key).c_str(), std::to_string(value).c_str());
+
         RcuGuard guard(rcu);
 
         size_t hash = hashFn(key);
@@ -136,6 +143,11 @@ public:
      */
     bool compareExchange(const Key& key, Value& expected, const Value& desired)
     {
+        log.log(LogMap, "cmpxchg", "key=%s, exp=%s, value=%s",
+                std::to_string(key).c_str(),
+                std::to_string(expected).c_str(),
+                std::to_string(desired).c_str());
+
         RcuGuard guard(rcu);
 
         size_t hash = hashFn(key);
@@ -154,6 +166,8 @@ public:
      */
     std::pair<bool, Value> remove(const Key& key)
     {
+        log.log(LogMap, "remove", "key=%s", std::to_string(key).c_str());
+
         RcuGuard guard(rcu);
 
         auto result = removeImpl(table.load(), hashFn(key), key);
@@ -259,8 +273,8 @@ private:
             Table* t,
             const size_t hash,
             const Key& key,
-            const KeyAtom keyAtom,
-            const ValueAtom valueAtom,
+            KeyAtom keyAtom,
+            ValueAtom valueAtom,
             DeallocAtom dealloc);
 
     bool compareExchangeImpl(
@@ -268,7 +282,7 @@ private:
             const size_t hash,
             const Key& key,
             Value& expected,
-            const ValueAtom desired);
+            ValueAtom desired);
 
     std::pair<bool, Value> removeImpl(
             Table* t, const size_t hash, const Key& key);

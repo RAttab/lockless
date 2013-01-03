@@ -49,7 +49,7 @@ print() const
 
     int written = snprintf(
             buffer.data(), buffer.size(),
-            "%6ld [%s] %-10s: %s",
+            "%6ld < %s > %-10s: %s",
             tick,
             to_string(type).c_str(),
             title.c_str(),

@@ -70,6 +70,12 @@ bool isValue(Atom atom)
 }
 
 template<typename Magic, typename Atom>
+Atom setValue(Atom atom)
+{
+    return atom & ~(Magic::mask0 | Magic::mask1);
+}
+
+template<typename Magic, typename Atom>
 bool isEmpty(Atom atom)
 {
     return (atom & (Magic::mask0 | Magic::mask1)) == Magic::mask0;
@@ -104,6 +110,31 @@ template<typename Magic, typename Atom>
 Atom clearMarks(Atom atom)
 {
     return atom & ~(Magic::mask0 | Magic::mask1);
+}
+
+template<typename Magic, typename Atom>
+char fmtState(Atom atom)
+{
+    if (isValue<Magic>(atom)) return 'v';
+    if (isEmpty<Magic>(atom)) return 'e';
+    if (isMoving<Magic>(atom)) return 'm';
+    if (isTombstone<Magic>(atom)) return 't';
+    return '?';
+}
+
+template<typename Magic, typename Atom>
+std::string fmtAtom(Atom atom)
+{
+    std::array<char, 20> buffer;
+    char s = fmtState<Magic>(atom);
+
+    if (s == 'v' || s == 'm') {
+        Atom val = clearMarks<Magic>(atom);
+        snprintf(buffer.data(), buffer.size(), "{%c,%ld}", s, val);
+    }
+    else snprintf(buffer.data(), buffer.size(), "{%c}", s);
+
+    return std::string(buffer.data());
 }
 
 enum Policy
@@ -278,22 +309,30 @@ insertImpl(
         Table* t,
         const size_t hash,
         const Key& key,
-        const KeyAtom keyAtom,
-        const ValueAtom valueAtom,
+        KeyAtom keyAtom,
+        ValueAtom valueAtom,
         DeallocAtom dealloc)
 {
     using namespace details;
 
     size_t tombstones = 0;
 
-    for (size_t i = 0; i < ProbeWindow; ++i) {
-        Bucket& bucket = t->buckets[this->bucket(hash, i, t->capacity)];
-        if (doMoveBucket(t, bucket)) continue;
+    keyAtom = setValue<MKey>(keyAtom);
+    valueAtom = setValue<MValue>(valueAtom);
 
+    for (size_t i = 0; i < ProbeWindow; ++i) {
+        size_t probeBucket = this->bucket(hash, i, t->capacity);
+        Bucket& bucket = t->buckets[probeBucket];
+        if (doMoveBucket(t, bucket)) continue;
 
         // 1. Set the key.
 
         KeyAtom bucketKeyAtom = bucket.keyAtom.load();
+
+        log.log(LogMap, "ins-impl", "bucket=%ld, key=%s, ins=%s",
+                probeBucket,
+                fmtAtom<MKey>(bucketKeyAtom).c_str(),
+                fmtAtom<MKey>(keyAtom).c_str());
 
         if (isTombstone<MKey>(bucketKeyAtom)) {
             tombstones++;
@@ -338,6 +377,11 @@ insertImpl(
         // we fail.
         while (true) {
 
+            log.log(LogMap, "ins-impl", "bucket=%ld, value=%s, ins=%s",
+                    probeBucket,
+                    fmtAtom<MKey>(bucketValueAtom).c_str(),
+                    fmtAtom<MKey>(valueAtom).c_str());
+
             // Beaten by a move or a delete operation. Retry the bucket.
             if (isMoving<MValue>(bucketValueAtom) ||
                     isTombstone<MValue>(bucketValueAtom))
@@ -355,13 +399,16 @@ insertImpl(
             assert(!dbg_once);
             dbg_once = true;
 
-            if (bucket.keyAtom.compare_exchange_strong(bucketValueAtom, valueAtom)){
+            if (bucket.valueAtom.compare_exchange_strong(bucketValueAtom, valueAtom)){
+                log.log(LogMap, "ins-impl", "success");
                 DeallocAtom newFlag = clearDeallocFlag(dealloc, DeallocValue);
                 deallocAtomNow(newFlag, keyAtom, valueAtom);
                 return true;
             }
         }
     }
+
+    log.log(LogMap, "ins-impl", "resize");
 
     // The key is definetively not in this table, try the next.
     doResize(t, tombstones);
@@ -459,11 +506,13 @@ compareExchangeImpl(
         const size_t hash,
         const Key& key,
         Value& expected,
-        const ValueAtom desired)
+        ValueAtom desired)
 {
     using namespace details;
 
     size_t tombstones = 0;
+
+    desired = setValue<MKey>(desired);
 
     for (size_t i = 0; i < ProbeWindow; ++i) {
         Bucket& bucket = t->buckets[this->bucket(hash, i, t->capacity)];
@@ -668,6 +717,7 @@ resizeImpl(size_t newCapacity, bool force)
     } while(!done);
 
     Table* newTable = safeNewTable.release();
+    if (!oldTable) return;
 
 
     // 2. Exhaustively move all the elements of the old table to the new table.
