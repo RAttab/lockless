@@ -379,8 +379,8 @@ insertImpl(
 
             log.log(LogMap, "ins-impl", "bucket=%ld, value=%s, ins=%s",
                     probeBucket,
-                    fmtAtom<MKey>(bucketValueAtom).c_str(),
-                    fmtAtom<MKey>(valueAtom).c_str());
+                    fmtAtom<MValue>(bucketValueAtom).c_str(),
+                    fmtAtom<MValue>(valueAtom).c_str());
 
             // Beaten by a move or a delete operation. Retry the bucket.
             if (isMoving<MValue>(bucketValueAtom) ||
@@ -401,6 +401,7 @@ insertImpl(
 
             if (bucket.valueAtom.compare_exchange_strong(bucketValueAtom, valueAtom)){
                 log.log(LogMap, "ins-impl", "success");
+
                 DeallocAtom newFlag = clearDeallocFlag(dealloc, DeallocValue);
                 deallocAtomNow(newFlag, keyAtom, valueAtom);
                 return true;
@@ -515,13 +516,19 @@ compareExchangeImpl(
     desired = setValue<MKey>(desired);
 
     for (size_t i = 0; i < ProbeWindow; ++i) {
-        Bucket& bucket = t->buckets[this->bucket(hash, i, t->capacity)];
+        size_t probeBucket = this->bucket(hash, i, t->capacity);
+        Bucket& bucket = t->buckets[probeBucket];
         if (doMoveBucket(t, bucket)) continue;
 
 
         // 1. Find the key
 
         KeyAtom keyAtom = bucket.keyAtom.load();
+
+        log.log(LogMap, "xchg-impl", "bucket=%ld, key=%s, target=%s",
+                probeBucket,
+                fmtAtom<MKey>(keyAtom).c_str(),
+                std::to_string(key).c_str());
 
         if (isTombstone<MKey>(keyAtom)) {
             tombstones++;
@@ -544,6 +551,13 @@ compareExchangeImpl(
         ValueAtom valueAtom = bucket.valueAtom.load();
 
         while (true) {
+
+            log.log(LogMap, "xchg-impl",
+                    "bucket=%ld, value=%s, expected= %s, desired=%s",
+                    probeBucket,
+                    fmtAtom<MValue>(valueAtom).c_str(),
+                    std::to_string(expected).c_str(),
+                    fmtAtom<MValue>(desired).c_str());
 
             // We may be in the middle of a move so try the bucket again.
             if (isTombstone<MValue>(valueAtom) || isMoving<MValue>(valueAtom)) {
@@ -573,6 +587,8 @@ compareExchangeImpl(
             }
         }
     }
+
+    log.log(LogMap, "xchg-impl", "resize");
 
     // The key is definetively not in this table, try the next.
     doResize(t, tombstones);

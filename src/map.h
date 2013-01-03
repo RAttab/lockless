@@ -143,7 +143,7 @@ public:
      */
     bool compareExchange(const Key& key, Value& expected, const Value& desired)
     {
-        log.log(LogMap, "cmpxchg", "key=%s, exp=%s, value=%s",
+        log.log(LogMap, "xchg", "key=%s, exp=%s, value=%s",
                 std::to_string(key).c_str(),
                 std::to_string(expected).c_str(),
                 std::to_string(desired).c_str());
