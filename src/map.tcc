@@ -140,7 +140,12 @@ std::string fmtAtom(Atom atom)
 enum Policy
 {
     ProbeWindow = 8,
-    TombstoneThreshold = 4,
+
+    /* A double call to remove on the same key can lead to serious trouble if
+       the probe window is full (I blame using identity function for std::hash
+       on ints). This will lead to a doubling of the table size everytime.
+     */
+    TombstoneThreshold = 1,
 };
 
 } // namespace details
@@ -329,7 +334,7 @@ insertImpl(
 
         KeyAtom bucketKeyAtom = bucket.keyAtom.load();
 
-        log.log(LogMap, "ins-impl", "bucket=%ld, key=%s, ins=%s",
+        log.log(LogMap, "ins-impl-1", "bucket=%ld, key=%s, ins=%s",
                 probeBucket,
                 fmtAtom<MKey>(bucketKeyAtom).c_str(),
                 fmtAtom<MKey>(keyAtom).c_str());
@@ -346,7 +351,7 @@ insertImpl(
         }
 
         if (!isEmpty<MKey>(bucketKeyAtom)) {
-            if (key != KeyAtomizer::load(bucketKeyAtom))
+            if (key != KeyAtomizer::load(clearMarks<MKey>(bucketKeyAtom)))
                 continue;
         }
 
@@ -377,7 +382,7 @@ insertImpl(
         // we fail.
         while (true) {
 
-            log.log(LogMap, "ins-impl", "bucket=%ld, value=%s, ins=%s",
+            log.log(LogMap, "ins-impl-2", "bucket=%ld, value=%s, ins=%s",
                     probeBucket,
                     fmtAtom<MValue>(bucketValueAtom).c_str(),
                     fmtAtom<MValue>(valueAtom).c_str());
@@ -399,9 +404,9 @@ insertImpl(
             assert(!dbg_once);
             dbg_once = true;
 
-            if (bucket.valueAtom.compare_exchange_strong(bucketValueAtom, valueAtom)){
-                log.log(LogMap, "ins-impl", "success");
-
+            if (bucket.valueAtom.compare_exchange_strong(
+                            bucketValueAtom, valueAtom))
+            {
                 DeallocAtom newFlag = clearDeallocFlag(dealloc, DeallocValue);
                 deallocAtomNow(newFlag, keyAtom, valueAtom);
                 return true;
@@ -409,7 +414,7 @@ insertImpl(
         }
     }
 
-    log.log(LogMap, "ins-impl", "resize");
+    log.log(LogMap, "ins-impl-3", "tombs=%ld, t=%p", tombstones, t);
 
     // The key is definetively not in this table, try the next.
     doResize(t, tombstones);
@@ -439,13 +444,19 @@ findImpl(Table* t, const size_t hash, const Key& key)
     size_t tombstones = 0;
 
     for (size_t i = 0; i < ProbeWindow; ++i) {
-        Bucket& bucket = t->buckets[this->bucket(hash, i, t->capacity)];
+        size_t probeBucket = this->bucket(hash, i, t->capacity);
+        Bucket& bucket = t->buckets[probeBucket];
         if (doMoveBucket(t, bucket)) continue;
 
 
         // 1. Check the key
 
         KeyAtom keyAtom = bucket.keyAtom.load();
+
+        log.log(LogMap, "fnd-impl-1", "bucket=%ld, key=%s, target=%s",
+                probeBucket,
+                fmtAtom<MKey>(keyAtom).c_str(),
+                std::to_string(key).c_str());
 
         if (isTombstone<MKey>(keyAtom)) {
             tombstones++;
@@ -461,12 +472,16 @@ findImpl(Table* t, const size_t hash, const Key& key)
             continue;
         }
 
-        if (key != KeyAtomizer::load(keyAtom)) continue;
+        if (key != KeyAtomizer::load(clearMarks<MKey>(keyAtom)))
+            continue;
 
 
         // 2. Check the value.
 
         ValueAtom valueAtom = bucket.valueAtom.load();
+
+        log.log(LogMap, "fnd-impl-2", "bucket=%ld, value=%s",
+                probeBucket, fmtAtom<MKey>(valueAtom).c_str());
 
         // We might be in the middle of a move op so try the bucket again so
         // that we'll eventually prob the next table if there's one.
@@ -485,9 +500,11 @@ findImpl(Table* t, const size_t hash, const Key& key)
         if (isMoving<MValue>(valueAtom))
             valueAtom = clearMarks<MValue>(valueAtom);
 
-        return std::make_pair(true, ValueAtomizer::load(valueAtom));
+        return std::make_pair(
+                true, ValueAtomizer::load(clearMarks<MValue>(valueAtom)));
     }
 
+    log.log(LogMap, "fnd-impl-3", "tomb=%ld, t=%p", tombstones, t);
 
     // The key is definetively not in this table, try the next.
     doResize(t, tombstones);
@@ -525,7 +542,7 @@ compareExchangeImpl(
 
         KeyAtom keyAtom = bucket.keyAtom.load();
 
-        log.log(LogMap, "xchg-impl", "bucket=%ld, key=%s, target=%s",
+        log.log(LogMap, "xchg-impl-1", "bucket=%ld, key=%s, target=%s",
                 probeBucket,
                 fmtAtom<MKey>(keyAtom).c_str(),
                 std::to_string(key).c_str());
@@ -543,7 +560,8 @@ compareExchangeImpl(
             return false;
         }
 
-        if (key != KeyAtomizer::load(keyAtom)) continue;
+        if (key != KeyAtomizer::load(clearMarks<MKey>(keyAtom)))
+            continue;
 
 
         // 2. Replace the value.
@@ -552,7 +570,7 @@ compareExchangeImpl(
 
         while (true) {
 
-            log.log(LogMap, "xchg-impl",
+            log.log(LogMap, "xchg-impl-2",
                     "bucket=%ld, value=%s, expected= %s, desired=%s",
                     probeBucket,
                     fmtAtom<MValue>(valueAtom).c_str(),
@@ -572,7 +590,7 @@ compareExchangeImpl(
             }
 
             // make the comparaison.
-            Value bucketValue = ValueAtomizer::load(valueAtom);
+            Value bucketValue = ValueAtomizer::load(clearMarks<MValue>(valueAtom));
             if (expected != bucketValue) {
                 ValueAtomizer::dealloc(desired);
                 expected = bucketValue;
@@ -588,12 +606,13 @@ compareExchangeImpl(
         }
     }
 
-    log.log(LogMap, "xchg-impl", "resize");
+    log.log(LogMap, "xchg-impl-3", "tomb=%ld, t=%p", tombstones, t);
 
     // The key is definetively not in this table, try the next.
     doResize(t, tombstones);
     return compareExchangeImpl(t->next.load(), hash, key, expected, desired);
 }
+
 
 /* This op is a little more tricky and proceeds in 3 phases: find the key, make
    sure the value is also present and tombstone the KV pair starting with the
@@ -616,8 +635,6 @@ removeImpl(Table* t, const size_t hash, const Key& key)
 
     for (size_t i = 0; i < ProbeWindow; ++i) {
         size_t probeBucket = this->bucket(hash, i, t->capacity);
-        log.log(LogMap, "rmv-impl", "bucket=%ld", probeBucket);
-
         Bucket& bucket = t->buckets[probeBucket];
         if (doMoveBucket(t, bucket)) continue;
 
@@ -626,7 +643,7 @@ removeImpl(Table* t, const size_t hash, const Key& key)
 
         KeyAtom keyAtom = bucket.keyAtom.load();
 
-        log.log(LogMap, "rmv-impl", "bucket=%ld, key=%s, target=%s",
+        log.log(LogMap, "rmv-impl-1", "bucket=%ld, key=%s, target=%s",
                 probeBucket,
                 fmtAtom<MKey>(keyAtom).c_str(),
                 std::to_string(key).c_str());
@@ -641,14 +658,15 @@ removeImpl(Table* t, const size_t hash, const Key& key)
         }
         if (isEmpty<MKey>(keyAtom)) return std::make_pair(false, Value());
 
-        if (key != KeyAtomizer::load(keyAtom)) continue;
+        if (key != KeyAtomizer::load(clearMarks<MKey>(keyAtom)))
+            continue;
 
 
         // 2. Check the value
 
         ValueAtom valueAtom = bucket.valueAtom.load();
 
-        log.log(LogMap, "rmv-impl", "bucket=%ld, value=%s",
+        log.log(LogMap, "rmv-impl-2", "bucket=%ld, value=%s",
                 probeBucket, fmtAtom<MKey>(valueAtom).c_str());
 
         // We may be in the middle of a move so try the bucket again.
@@ -666,7 +684,7 @@ removeImpl(Table* t, const size_t hash, const Key& key)
         // the bucket again.
         KeyAtom newKeyAtom = setTombstone<MKey>(keyAtom);
 
-        log.log(LogMap, "rmv-impl", "bucket=%ld, newKey=%s",
+        log.log(LogMap, "rmv-impl-3", "bucket=%ld, newKey=%s",
                 probeBucket, fmtAtom<MKey>(newKeyAtom).c_str());
 
         if (!bucket.keyAtom.compare_exchange_strong(keyAtom, newKeyAtom)) {
@@ -678,7 +696,7 @@ removeImpl(Table* t, const size_t hash, const Key& key)
         // op. Also prevent any further replace op by tombstoning the value.
         ValueAtom newValueAtom = setTombstone<MValue>(valueAtom);
 
-        log.log(LogMap, "rmv-impl", "bucket=%ld, newValue=%s",
+        log.log(LogMap, "rmv-impl-4", "bucket=%ld, newValue=%s",
                 probeBucket, fmtAtom<MKey>(newValueAtom).c_str());
 
         valueAtom = bucket.valueAtom.exchange(newValueAtom);
@@ -687,11 +705,11 @@ removeImpl(Table* t, const size_t hash, const Key& key)
         // still them.
         deallocAtomDefer(DeallocBoth, keyAtom, valueAtom);
 
-        return std::make_pair(true, ValueAtomizer::load(valueAtom));
+        return std::make_pair(
+                true, ValueAtomizer::load(clearMarks<MValue>(valueAtom)));
     }
 
-    log.log(LogMap, "rmv-impl", "tomb=%ld, table=%p, next=%p",
-            tombstones, t, t->next.load());
+    log.log(LogMap, "rmv-impl-5", "tomb=%ld, table=%p", tombstones, t);
 
     // The key is definetively not in this table, try the next.
     doResize(t, tombstones);
@@ -706,11 +724,11 @@ void
 Map<Key, Value, Hash, MKey, MValue>::
 doResize(Table* t, size_t tombstones)
 {
-    if (!t->isResizing()) {
-        if (tombstones >= details::TombstoneThreshold)
-            resizeImpl(t->capacity, true);
-        else resizeImpl(t->capacity * 2, false);
-    }
+    if (t->isResizing()) return;
+
+    if (tombstones >= details::TombstoneThreshold)
+        resizeImpl(t->capacity, true);
+    else resizeImpl(t->capacity * 2, false);
 }
 
 
