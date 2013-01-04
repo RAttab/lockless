@@ -203,8 +203,8 @@ moveBucket(Table* dest, Bucket& src)
 
     // 1. Read the KV pair in src and prepare them for moving.
 
-    KeyAtom oldKeyAtom = src.keyAtom.load();
     KeyAtom keyAtom;
+    KeyAtom oldKeyAtom = src.keyAtom.load();
     do {
         if (isTombstone<MKey>(oldKeyAtom)) return;
         if (isMoving<MKey>(oldKeyAtom)) {
@@ -219,8 +219,8 @@ moveBucket(Table* dest, Bucket& src)
     } while(!src.keyAtom.compare_exchange_weak(oldKeyAtom, keyAtom));
 
 
-    ValueAtom oldValueAtom = src.valueAtom.load();
     ValueAtom valueAtom;
+    ValueAtom oldValueAtom = src.valueAtom.load();
     do {
         if (isTombstone<MValue>(oldValueAtom)) return;
         if (isMoving<MValue>(oldValueAtom)) {
@@ -230,7 +230,7 @@ moveBucket(Table* dest, Bucket& src)
 
         if (isEmpty<MValue>(oldValueAtom))
                 valueAtom = setTombstone<MValue>(oldValueAtom);
-        else keyAtom = setMoving<MValue>(oldValueAtom);
+        else valueAtom = setMoving<MValue>(oldValueAtom);
 
     } while (!src.valueAtom.compare_exchange_weak(oldValueAtom, valueAtom));
 
@@ -615,13 +615,21 @@ removeImpl(Table* t, const size_t hash, const Key& key)
     size_t tombstones = 0;
 
     for (size_t i = 0; i < ProbeWindow; ++i) {
-        Bucket& bucket = t->buckets[this->bucket(hash, i, t->capacity)];
+        size_t probeBucket = this->bucket(hash, i, t->capacity);
+        log.log(LogMap, "rmv-impl", "bucket=%ld", probeBucket);
+
+        Bucket& bucket = t->buckets[probeBucket];
         if (doMoveBucket(t, bucket)) continue;
 
 
         // 1. Find the key
 
         KeyAtom keyAtom = bucket.keyAtom.load();
+
+        log.log(LogMap, "rmv-impl", "bucket=%ld, key=%s, target=%s",
+                probeBucket,
+                fmtAtom<MKey>(keyAtom).c_str(),
+                std::to_string(key).c_str());
 
         if (isTombstone<MKey>(keyAtom)) {
             tombstones++;
@@ -640,6 +648,9 @@ removeImpl(Table* t, const size_t hash, const Key& key)
 
         ValueAtom valueAtom = bucket.valueAtom.load();
 
+        log.log(LogMap, "rmv-impl", "bucket=%ld, value=%s",
+                probeBucket, fmtAtom<MKey>(valueAtom).c_str());
+
         // We may be in the middle of a move so try the bucket again.
         if (isTombstone<MValue>(valueAtom) || isMoving<MValue>(valueAtom)) {
             --i;
@@ -654,6 +665,10 @@ removeImpl(Table* t, const size_t hash, const Key& key)
         // Tombstone the key. If we're in a race with another op then just try
         // the bucket again.
         KeyAtom newKeyAtom = setTombstone<MKey>(keyAtom);
+
+        log.log(LogMap, "rmv-impl", "bucket=%ld, newKey=%s",
+                probeBucket, fmtAtom<MKey>(newKeyAtom).c_str());
+
         if (!bucket.keyAtom.compare_exchange_strong(keyAtom, newKeyAtom)) {
             --i;
             continue;
@@ -662,6 +677,10 @@ removeImpl(Table* t, const size_t hash, const Key& key)
         // Reload the value from the bucket in case there's a lagging replace
         // op. Also prevent any further replace op by tombstoning the value.
         ValueAtom newValueAtom = setTombstone<MValue>(valueAtom);
+
+        log.log(LogMap, "rmv-impl", "bucket=%ld, newValue=%s",
+                probeBucket, fmtAtom<MKey>(newValueAtom).c_str());
+
         valueAtom = bucket.valueAtom.exchange(newValueAtom);
 
         // The atoms come from the table so defer the delete in case someone's
@@ -670,6 +689,9 @@ removeImpl(Table* t, const size_t hash, const Key& key)
 
         return std::make_pair(true, ValueAtomizer::load(valueAtom));
     }
+
+    log.log(LogMap, "rmv-impl", "tomb=%ld, table=%p, next=%p",
+            tombstones, t, t->next.load());
 
     // The key is definetively not in this table, try the next.
     doResize(t, tombstones);
