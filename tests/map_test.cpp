@@ -32,6 +32,25 @@ void checkPair(const std::pair<bool, uint64_t>& r, uint64_t exp)
     BOOST_CHECK_EQUAL(r.second, exp);
 }
 
+BOOST_AUTO_TEST_CASE(resize_test)
+{
+    cerr << fmtTitle("init", '=') << endl;
+    Map<uint64_t, uint64_t> map;
+    logToStream(map.log);
+
+    cerr << fmtTitle("resize 0", '=') << endl;
+    map.resize(1ULL << 6);
+    logToStream(map.log);
+
+    cerr << fmtTitle("resize 1", '=') << endl;
+    map.resize(1ULL << 7);
+    logToStream(map.log);
+
+    cerr << fmtTitle("resize 2", '=') << endl;
+    map.resize(1ULL << 8);
+    logToStream(map.log);
+}
+
 
 BOOST_AUTO_TEST_CASE(basic_test)
 {
@@ -105,11 +124,20 @@ BOOST_AUTO_TEST_CASE(basic_test)
 
     for (uint64_t i = 0; i < Size; ++i) {
         cerr << fmtTitle(to_string(i)) << endl;
-
         checkPair(map.remove(i), i);
-        checkPair(map.remove(i));
-        checkPair(map.find(i));
-
+        // checkPair(map.remove(i));
         logToStream(map.log);
+    }
+
+    cerr << fmtTitle("check", '=') << endl;
+
+    for (uint64_t i = 0; i < Size; ++i) {
+        cerr << fmtTitle(to_string(i)) << endl;
+        checkPair(map.find(i));
+        checkPair(map.remove(i));
+
+        uint64_t exp;
+        BOOST_CHECK(!map.compareExchange(i, exp = i, i+1));
+        BOOST_CHECK_EQUAL(exp, i);
     }
 }

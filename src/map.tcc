@@ -721,59 +721,84 @@ void
 Map<Key, Value, Hash, MKey, MValue>::
 resizeImpl(size_t newCapacity, bool force)
 {
-    Table* oldTable = table.load();
-
-    // 1. Insert the new table in the chain.
+    using namespace details;
 
     std::unique_ptr<Table, MallocDeleter> safeNewTable;
-    bool done;
 
+    std::atomic<Table*>* prev = &table;
+    Table* prevTable = nullptr;
+
+    bool done = false;
+
+    // 1. Insert the new table in the chain.
     do {
-        if (oldTable) {
-            if (newCapacity < oldTable->capacity) return;
-            if (newCapacity == oldTable->capacity) {
+        Table* curTable = prev->load();
+
+        log.log(LogMap, "rsz-impl-1",
+                "prev=%p, prevTable=%p, curTable=%p, curCapacity=%ld",
+                prev, prevTable, curTable, curTable ? curTable->capacity : 0);
+
+        if (curTable) {
+            if (newCapacity < curTable->capacity) return;
+            if (newCapacity == curTable->capacity) {
                 if (!force) return;
                 // Looking do to a cleanup but someone else is already doing it.
-                if (oldTable->isResizing()) return;
+                if (curTable->isResizing()) return;
             }
 
-            if (oldTable->isResizing()) {
-                oldTable = oldTable->next.load();
-                continue;
-            }
+            prevTable = curTable;
+            prev = &curTable->next;
+            continue;
         }
 
         if (!safeNewTable)
             safeNewTable.reset(Table::alloc(newCapacity));
 
-        safeNewTable->prev = oldTable ? &oldTable->next : &table;
-
-        Table* prevTable = nullptr;
-        done = safeNewTable->prev->compare_exchange_weak(
-                prevTable, safeNewTable.get());
-
+        assert(!curTable);
+        done = prev->compare_exchange_weak(curTable, safeNewTable.get());
     } while(!done);
 
     Table* newTable = safeNewTable.release();
-    if (!oldTable) return;
+
+    log.log(LogMap, "rsz-impl-2", "prev=%p, prevTable=%p, next=%p, new=%p",
+            prev, prevTable, prev->load(), newTable);
+
+    if (!prevTable) return;
 
 
     // 2. Exhaustively move all the elements of the old table to the new table.
     // Note that we'll receive help from the other threads as well.
-
-    for (size_t i = 0; i < newCapacity; ++i)
-        moveBucket(newTable, oldTable->buckets[i]);
+    for (size_t i = 0; i < prevTable->capacity; ++i)
+        moveBucket(newTable, prevTable->buckets[i]);
 
 
     // 3. Get rid of oldTable.
 
-    assert(oldTable->prev);
-    assert(oldTable->prev->load() == oldTable);
+    Table* toRemove = prevTable;
+    prevTable = nullptr;
+    prev = &table;
 
-    // Remove oldTable from the list. We can't use newTable to do this because
-    // it to might have been resized and removed from the list.
-    oldTable->prev->store(oldTable->next.load());
-    rcu.defer([=] { std::free(oldTable); });
+    done = false;
+
+    do {
+        Table* curTable = prev->load();
+
+        log.log(LogMap, "rsz-impl-3",
+                "prev=%p, prevTable=%p, curTable=%p, target=%p",
+                prev, prevTable, curTable, toRemove);
+
+        assert(curTable);
+
+        if (curTable != toRemove) {
+            prevTable = curTable;
+            prev = &curTable->next;
+            continue;
+        }
+
+        done = prev->compare_exchange_weak(curTable, curTable->next.load());
+    } while(!done);
+
+    rcu.defer([=] { std::free(toRemove); });
 }
 
 } // lockless

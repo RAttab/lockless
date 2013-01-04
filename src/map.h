@@ -194,7 +194,6 @@ private:
     {
         size_t capacity;
         std::atomic<Table*> next;
-        std::atomic<Table*>* prev;
 
         Bucket buckets[1];
 
@@ -202,13 +201,12 @@ private:
 
         static Table* alloc(size_t capacity)
         {
-            size_t size = sizeof(capacity) + sizeof(next) + sizeof(prev);
+            size_t size = sizeof(capacity) + sizeof(next);
             size += sizeof(Bucket) * capacity;
 
             Table* table = static_cast<Table*>(std::malloc(size));
             table->capacity = capacity;
             table->next.store(nullptr);
-            table->prev = nullptr;
 
             for (size_t i = 0; i < capacity; ++i)
                 table->buckets[i].init();
@@ -220,7 +218,7 @@ private:
     // \todo could do better with a nlz bit op.
     size_t adjustCapacity(size_t newCapacity)
     {
-        size_t capacity = 1ULL << 8;
+        size_t capacity = 1ULL << 5;
         while(capacity < newCapacity)
             capacity *= 2;
 
