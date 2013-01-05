@@ -172,9 +172,9 @@ std::string fmtValue(double value)
 std::string fmtTitle(const std::string& title, char fill = '-')
 {
     std::array<char, 80> buffer;
-    std::string filler(80 - title.size() - 1, fill);
+    std::string filler(80 - title.size() - 4, fill);
 
-    snprintf(buffer.data(), buffer.size(), "%s %s",
+    snprintf(buffer.data(), buffer.size(), "[ %s ]%s",
             title.c_str(), filler.c_str());
     return std::string(buffer.data());
 }
