@@ -26,6 +26,12 @@ struct IsAtomic
     enum { value = sizeof(T) <= sizeof(size_t) };
 };
 
+template<>
+struct IsAtomic<std::string>
+{
+    enum { value = false };
+};
+
 
 /******************************************************************************/
 /* VALUE TRAITS                                                               */
@@ -77,11 +83,11 @@ private:
 template<typename T>
 struct Atomizer<T, false>
 {
-    typedef T* type;
+    typedef uintptr_t type;
 
     static type alloc(const T& value)
     {
-        return new T(value);
+        return reinterpret_cast<type>(new T(value));
     }
 
     static type alloc(T&& value)
@@ -91,10 +97,12 @@ struct Atomizer<T, false>
 
     static T load(type atom)
     {
-        return *atom;
+        return *reinterpret_cast<T*>(atom);
     }
 
-    static void dealloc(type atom) { delete atom; }
+    static void dealloc(type atom) {
+        delete reinterpret_cast<T*>(atom);
+    }
 
 private:
 
