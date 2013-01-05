@@ -296,4 +296,19 @@ extern Log<1024> GlobalLog;
 
 } // lockless
 
+namespace std {
+
+std::string to_string(const std::string& str) { return str; }
+
+template<typename First, typename Second>
+std::string to_string(const std::pair<First, Second>& p)
+{
+    std::array<char, 80> buffer;
+    snprintf(buffer.data(), buffer.size(), "<%s, %s>",
+            to_string(p.first).c_str(), to_string(p.second).c_str());
+    return std::string(buffer.data());
+}
+
+} // namespace std
+
 #endif // __lockless__log_h__
