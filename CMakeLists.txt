@@ -78,3 +78,7 @@ add_test(log log_test)
 add_executable(map_test tests/map_test.cpp)
 target_link_libraries(map_test lockless_log boost_unit_test_framework)
 add_test(map map_test)
+
+add_executable(map_para_test tests/map_para_test.cpp)
+target_link_libraries(map_para_test lockless_log boost_unit_test_framework)
+add_test(map_para map_para_test)

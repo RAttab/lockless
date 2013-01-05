@@ -12,6 +12,7 @@
 #define LOCKLESS_MAP_DEBUG 1
 
 #include "map.h"
+#include "check.h"
 #include "test_utils.h"
 
 #include <boost/test/unit_test.hpp>
@@ -21,24 +22,11 @@
 using namespace std;
 using namespace lockless;
 
-
-template<typename T>
-void checkPair(const std::pair<bool, T>& r)
+BOOST_AUTO_TEST_CASE(resizeTest)
 {
-    BOOST_CHECK_EQUAL(r.first, false);
-    BOOST_CHECK_EQUAL(r.second, T());
-}
+    int a = 2;
+    locklessCheckEq(a, 10);
 
-template<typename T>
-void checkPair(const std::pair<bool, T>& r, T exp)
-{
-    BOOST_CHECK_EQUAL(r.first, true);
-    BOOST_CHECK_EQUAL(r.second, exp);
-}
-
-
-BOOST_AUTO_TEST_CASE(resize_test)
-{
     cerr << fmtTitle("init", '=') << endl;
     Map<size_t, size_t> map;
     // logToStream(map.log);
@@ -57,30 +45,30 @@ BOOST_AUTO_TEST_CASE(resize_test)
 }
 
 
-BOOST_AUTO_TEST_CASE(basic_test)
+BOOST_AUTO_TEST_CASE(basicOpTest)
 {
     enum { Size = 100 };
 
     Map<size_t, size_t> map;
 
-    BOOST_CHECK_EQUAL(map.size(), 0);
+    locklessCheckEq(map.size(), 0);
 
     cerr << fmtTitle("fail find", '=') << endl;
 
     for (size_t i = 0; i < Size; ++i) {
-        checkPair(map.find(i));
-        checkPair(map.remove(i));
-        BOOST_CHECK(!map.compareExchange(i, i, i*i));
+        checkPair(map.find(i), locklessCtx());
+        checkPair(map.remove(i), locklessCtx());
+        locklessCheck(!map.compareExchange(i, i, i*i));
     }
 
     cerr << fmtTitle("insert", '=') << endl;
 
     for (size_t i = 0; i < Size; ++i) {
-        BOOST_CHECK(map.insert(i, i));
-        BOOST_CHECK(!map.insert(i, i+1));
-        BOOST_CHECK_EQUAL(map.size(), i + 1);
+        locklessCheck(map.insert(i, i));
+        locklessCheck(!map.insert(i, i+1));
+        locklessCheckEq(map.size(), i + 1);
 
-        checkPair(map.find(i), i);
+        checkPair(map.find(i), i, locklessCtx());
     }
 
     size_t capacity = map.capacity();
@@ -90,39 +78,39 @@ BOOST_AUTO_TEST_CASE(basic_test)
     for (size_t i = 0; i < Size; ++i) {
         size_t exp;
 
-        BOOST_CHECK(!map.compareExchange(i, exp = i+1, i));
-        BOOST_CHECK_EQUAL(exp, i);
-        BOOST_CHECK( map.compareExchange(i, exp = i, i+1));
+        locklessCheck(!map.compareExchange(i, exp = i+1, i));
+        locklessCheckEq(exp, i);
+        locklessCheck( map.compareExchange(i, exp = i, i+1));
 
-        checkPair(map.find(i), i+1);
+        checkPair(map.find(i), i+1, locklessCtx());
 
-        BOOST_CHECK(!map.compareExchange(i, exp = i, i+1));
-        BOOST_CHECK_EQUAL(exp, i+1);
-        BOOST_CHECK( map.compareExchange(i, exp = i+1, i));
+        locklessCheck(!map.compareExchange(i, exp = i, i+1));
+        locklessCheckEq(exp, i+1);
+        locklessCheck( map.compareExchange(i, exp = i+1, i));
 
-        checkPair(map.find(i), i);
-        BOOST_CHECK(!map.insert(i, i+1));
+        checkPair(map.find(i), i, locklessCtx());
+        locklessCheck(!map.insert(i, i+1));
     }
 
-    BOOST_CHECK_EQUAL(map.size(), Size);
-    BOOST_CHECK_EQUAL(map.capacity(), capacity);
+    locklessCheckEq(map.size(), Size);
+    locklessCheckEq(map.capacity(), capacity);
 
     cerr << fmtTitle("remove", '=') << endl;
 
     for (size_t i = 0; i < Size; ++i) {
-        checkPair(map.remove(i), i);
-        checkPair(map.remove(i));
+        checkPair(map.remove(i), i, locklessCtx());
+        checkPair(map.remove(i), locklessCtx());
     }
 
     cerr << fmtTitle("check", '=') << endl;
 
     for (size_t i = 0; i < Size; ++i) {
-        checkPair(map.find(i));
-        checkPair(map.remove(i));
+        checkPair(map.find(i), locklessCtx());
+        checkPair(map.remove(i), locklessCtx());
 
         size_t exp;
-        BOOST_CHECK(!map.compareExchange(i, exp = i, i+1));
-        BOOST_CHECK_EQUAL(exp, i);
+        locklessCheck(!map.compareExchange(i, exp = i, i+1));
+        locklessCheckEq(exp, i);
     }
 }
 
@@ -140,7 +128,7 @@ BOOST_AUTO_TEST_CASE(basic_test)
    If the threshold is 1 then this will trigger a cleanup instead and the table
    size remains constant.
  */
-BOOST_AUTO_TEST_CASE(erratic_remove_test)
+BOOST_AUTO_TEST_CASE(erraticRemoveTest)
 {
     enum { Size = 100 };
     Map<size_t, size_t> map;
@@ -177,8 +165,8 @@ void fuzzTest(const function< pair<Key, Value>() >& gen, Engine& rng)
 
         if (keys.empty() || action < 5) {
             auto ret = gen();
-            BOOST_CHECK(map.insert(ret.first, ret.second));
-            BOOST_CHECK(!map.insert(ret.first, ret.second));
+            locklessCheck(map.insert(ret.first, ret.second));
+            locklessCheck(!map.insert(ret.first, ret.second));
             keys.push_back(ret);
         }
 
@@ -187,9 +175,9 @@ void fuzzTest(const function< pair<Key, Value>() >& gen, Engine& rng)
             size_t index = indexRnd();
             auto& kv = keys[index];
 
-            BOOST_CHECK(map.compareExchange(kv.first, kv.second, newValue));
-            BOOST_CHECK(!map.compareExchange(kv.first, kv.second, newValue));
-            BOOST_CHECK_EQUAL(kv.second, newValue);
+            locklessCheck(map.compareExchange(kv.first, kv.second, newValue));
+            locklessCheck(!map.compareExchange(kv.first, kv.second, newValue));
+            locklessCheckEq(kv.second, newValue);
 
             keys[index].second = newValue;
         }
@@ -198,29 +186,29 @@ void fuzzTest(const function< pair<Key, Value>() >& gen, Engine& rng)
             size_t index = indexRnd();
             auto& kv = keys[index];
 
-            checkPair(map.remove(kv.first), kv.second);
-            checkPair(map.remove(kv.first));
+            checkPair(map.remove(kv.first), kv.second, locklessCtx());
+            checkPair(map.remove(kv.first), locklessCtx());
             keys.erase(keys.begin() + index);
         }
 
-        BOOST_CHECK_EQUAL(map.size(), keys.size());
+        locklessCheckEq(map.size(), keys.size());
 
         for (size_t j = 0; j < keys.size(); ++j) {
             auto& kv = keys[j];
-            checkPair(map.find(kv.first), kv.second);
+            checkPair(map.find(kv.first), kv.second, locklessCtx());
         }
 
     }
 
-    cerr << "Final Size=" << map.size() << endl;
+    cerr << "size=" << map.size() << " / " << map.capacity() << endl;
 
     for (size_t i = 0; i < keys.size(); ++i) {
         auto& kv = keys[i];
-        checkPair(map.remove(kv.first), kv.second);
+        checkPair(map.remove(kv.first), kv.second, locklessCtx());
     }
 }
 
-BOOST_AUTO_TEST_CASE(int_fuzz_test)
+BOOST_AUTO_TEST_CASE(intFuzzTest)
 {
     static mt19937_64 rng;
     uniform_int_distribution<unsigned> dist(0, -1);
@@ -235,7 +223,7 @@ BOOST_AUTO_TEST_CASE(int_fuzz_test)
     fuzzTest<size_t, size_t>(gen, rng);
 }
 
-BOOST_AUTO_TEST_CASE(string_fuzz_test)
+BOOST_AUTO_TEST_CASE(strFuzzTest)
 {
     static mt19937_64 rng;
     uniform_int_distribution<unsigned> dist(0, 256);
