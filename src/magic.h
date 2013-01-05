@@ -37,12 +37,13 @@ constexpr T msbMask(unsigned pos)
 /* Can be overidden by the user for a given type. */
 template<typename T> struct MagicValue {};
 
+
 /* Grab the most-significant bits which are unlikely to be used. */
 template<>
 struct MagicValue<size_t>
 {
-    static const size_t mask0 = details::msbMask<size_t>(0);
-    static const size_t mask1 = details::msbMask<size_t>(1);
+    static constexpr size_t mask0 = details::msbMask<size_t>(0);
+    static constexpr size_t mask1 = details::msbMask<size_t>(1);
 };
 
 
@@ -52,9 +53,10 @@ struct MagicValue<size_t>
 template<typename T>
 struct MagicValue<T*>
 {
-    static const T* mask0 = reinterpret_cast<T*>(1);
-    static const T* mask1 = reinterpret_cast<T*>(2);
+    static constexpr T* mask0 = reinterpret_cast<T*>(1);
+    static constexpr T* mask1 = reinterpret_cast<T*>(2);
 };
+
 
 /* Since we can't steal alignment bits, just great the most-significant bits. */
 template<>
