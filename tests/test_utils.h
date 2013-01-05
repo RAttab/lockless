@@ -15,6 +15,7 @@
 #include <functional>
 #include <future>
 #include <thread>
+#include <random>
 #include <cstdlib>
 #include <cmath>
 
@@ -112,7 +113,7 @@ private:
 
 
 /******************************************************************************/
-/* FORMAT                                                                     */
+/* FORMAT UTILS                                                               */
 /******************************************************************************/
 
 std::string fmtElapsed(double elapsed)
@@ -350,6 +351,26 @@ private:
     std::vector<TimeDist> latencies;
     std::vector<TimeDist> throughputs;
 };
+
+
+/******************************************************************************/
+/* RANDOM STRING                                                              */
+/******************************************************************************/
+
+template<typename Engine>
+std::string randomString(size_t length, Engine& engine)
+{
+    const std::string source = 
+        "abcdefghijklmnopqrstuvwxyz"
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        "0123456789";
+
+    std::uniform_int_distribution<unsigned> dist(0, source.size());
+
+    std::string output;
+    while (output.size() < length) output += source[dist(engine)];
+    return output;
+}
 
 
 } // lockless

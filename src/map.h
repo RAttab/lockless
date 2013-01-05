@@ -31,8 +31,8 @@ template<
     typename Key,
     typename Value,
     typename Hash = std::hash<Key>,
-    typename MKey = MagicValue<Key>,
-    typename MValue = MagicValue<Value> >
+    typename MKey = MagicValue< typename details::Atomizer<Key>::type >,
+    typename MValue = MagicValue< typename details::Atomizer<Value>::type > >
 struct Map
 {
 

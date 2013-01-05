@@ -22,13 +22,15 @@ using namespace std;
 using namespace lockless;
 
 
-void checkPair(const std::pair<bool, size_t>& r)
+template<typename T>
+void checkPair(const std::pair<bool, T>& r)
 {
     BOOST_CHECK_EQUAL(r.first, false);
-    BOOST_CHECK_EQUAL(r.second, size_t());
+    BOOST_CHECK_EQUAL(r.second, T());
 }
 
-void checkPair(const std::pair<bool, size_t>& r, size_t exp)
+template<typename T>
+void checkPair(const std::pair<bool, T>& r, T exp)
 {
     BOOST_CHECK_EQUAL(r.first, true);
     BOOST_CHECK_EQUAL(r.second, exp);
@@ -66,40 +68,26 @@ BOOST_AUTO_TEST_CASE(basic_test)
     cerr << fmtTitle("fail find", '=') << endl;
 
     for (size_t i = 0; i < Size; ++i) {
-        // cerr << fmtTitle(to_string(i)) << endl;
-
         checkPair(map.find(i));
         checkPair(map.remove(i));
         BOOST_CHECK(!map.compareExchange(i, i, i*i));
-
-        // logToStream(map.log);
     }
-
-    // logToStream(map.log);
 
     cerr << fmtTitle("insert", '=') << endl;
 
     for (size_t i = 0; i < Size; ++i) {
-        // cerr << fmtTitle(to_string(i)) << endl;
-
         BOOST_CHECK(map.insert(i, i));
         BOOST_CHECK(!map.insert(i, i+1));
         BOOST_CHECK_EQUAL(map.size(), i + 1);
 
         checkPair(map.find(i), i);
-
-        // logToStream(map.log);
     }
 
     size_t capacity = map.capacity();
 
-    // logToStream(map.log);
-
     cerr << fmtTitle("compareExchange", '=') << endl;
 
     for (size_t i = 0; i < Size; ++i) {
-        // cerr << fmtTitle(to_string(i)) << endl;
-
         size_t exp;
 
         BOOST_CHECK(!map.compareExchange(i, exp = i+1, i));
@@ -114,36 +102,27 @@ BOOST_AUTO_TEST_CASE(basic_test)
 
         checkPair(map.find(i), i);
         BOOST_CHECK(!map.insert(i, i+1));
-
-        // logToStream(map.log);
     }
 
     BOOST_CHECK_EQUAL(map.size(), Size);
     BOOST_CHECK_EQUAL(map.capacity(), capacity);
 
-    // logToStream(map.log);
-
     cerr << fmtTitle("remove", '=') << endl;
 
     for (size_t i = 0; i < Size; ++i) {
-        // cerr << fmtTitle(to_string(i)) << endl;
         checkPair(map.remove(i), i);
         checkPair(map.remove(i));
-        // logToStream(map.log);
     }
 
     cerr << fmtTitle("check", '=') << endl;
 
     for (size_t i = 0; i < Size; ++i) {
-        // cerr << fmtTitle(to_string(i)) << endl;
         checkPair(map.find(i));
         checkPair(map.remove(i));
 
         size_t exp;
         BOOST_CHECK(!map.compareExchange(i, exp = i, i+1));
         BOOST_CHECK_EQUAL(exp, i);
-
-        // logToStream(map.log);
     }
 }
 
@@ -177,39 +156,35 @@ BOOST_AUTO_TEST_CASE(erratic_remove_test)
     }
 }
 
-BOOST_AUTO_TEST_CASE(fuzz_test)
+template<typename Key, typename Value, typename Engine>
+void fuzzTest(const function< pair<Key, Value>() >& gen, Engine& rng)
 {
     enum { Iterations = 2000 };
-    Map<size_t, size_t> map;
 
-    typedef MagicValue<size_t> Magic;
+    Map<Key, Value> map;
+    vector< pair<Key, Value> > keys;
 
-    std::vector< std::pair<size_t, size_t> > keys;
-
-    mt19937_64 engine;
     uniform_int_distribution<size_t> actionRnd(0, 10);
-    uniform_int_distribution<size_t> keyRnd(0, -1);
+
+    auto indexRnd = [&] {
+        return uniform_int_distribution<size_t>(0, keys.size() - 1)(rng);
+    };
 
     cerr << fmtTitle("fuzz", '=') << endl;
 
     for (size_t i = 0; i < Iterations; ++i) {
-        unsigned action = actionRnd(engine);
+        unsigned action = actionRnd(rng);
 
-        // logToStream(map.log);
-        // cerr << fmtTitle(to_string(i)) << endl;
-
-        if (keys.empty() || action < 6) {
-            size_t key = details::clearMarks<Magic>(keyRnd(engine));
-            size_t value = details::clearMarks<Magic>(keyRnd(engine));
-
-            BOOST_CHECK(map.insert(key, value));
-            BOOST_CHECK(!map.insert(key, value));
-            keys.push_back(make_pair(key, value));
+        if (keys.empty() || action < 5) {
+            auto ret = gen();
+            BOOST_CHECK(map.insert(ret.first, ret.second));
+            BOOST_CHECK(!map.insert(ret.first, ret.second));
+            keys.push_back(ret);
         }
 
         else if (action < 7) {
-            size_t index = keyRnd(engine) % keys.size();
-            size_t newValue = details::clearMarks<Magic>(keyRnd(engine));
+            Value newValue = gen().second;
+            size_t index = indexRnd();
             auto& kv = keys[index];
 
             BOOST_CHECK(map.compareExchange(kv.first, kv.second, newValue));
@@ -220,7 +195,7 @@ BOOST_AUTO_TEST_CASE(fuzz_test)
         }
 
         else {
-            size_t index = keyRnd(engine) % keys.size();
+            size_t index = indexRnd();
             auto& kv = keys[index];
 
             checkPair(map.remove(kv.first), kv.second);
@@ -234,6 +209,7 @@ BOOST_AUTO_TEST_CASE(fuzz_test)
             auto& kv = keys[j];
             checkPair(map.find(kv.first), kv.second);
         }
+
     }
 
     cerr << "Final Size=" << map.size() << endl;
@@ -242,4 +218,33 @@ BOOST_AUTO_TEST_CASE(fuzz_test)
         auto& kv = keys[i];
         checkPair(map.remove(kv.first), kv.second);
     }
+}
+
+BOOST_AUTO_TEST_CASE(int_fuzz_test)
+{
+    static mt19937_64 rng;
+    uniform_int_distribution<unsigned> dist(0, -1);
+
+    auto gen = [&] {
+        typedef MagicValue<size_t> Magic;
+        return make_pair(
+                details::clearMarks<Magic>(dist(rng)),
+                details::clearMarks<Magic>(dist(rng)));
+    };
+
+    fuzzTest<size_t, size_t>(gen, rng);
+}
+
+BOOST_AUTO_TEST_CASE(string_fuzz_test)
+{
+    static mt19937_64 rng;
+    uniform_int_distribution<unsigned> dist(0, 256);
+
+    auto gen = [&] {
+        return make_pair(
+                randomString(dist(rng), rng),
+                randomString(dist(rng), rng));
+    };
+
+    fuzzTest<string, string>(gen, rng);
 }
