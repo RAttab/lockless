@@ -47,10 +47,15 @@ endif()
 # BUILD
 #------------------------------------------------------------------------------#
 
-install(FILES src/utils.h src/clock.h src/log.h DESTINATION include/lockless)
-install(FILES src/magic.h src/atomizer.h        DESTINATION include/lockless)
-install(FILES src/rcu.h                         DESTINATION include/lockless)
-install(FILES src/map.h map.tcc                 DESTINATION include/lockless)
+install(
+    FILES
+    src/utils.h src/log.h src/check.h
+    src/clock.h src/magic.h src/atomizer.h
+    src/rcu.h
+    src/map.h map.tcc
+
+    DESTINATION
+    include/lockless)
 
 add_library(lockless_log SHARED src/log.cpp)
 install(TARGETS lockless_log DESTINATION lib)
