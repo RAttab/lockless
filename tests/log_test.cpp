@@ -13,13 +13,11 @@
 #include "check.h"
 
 #include <boost/test/unit_test.hpp>
-#include <thread>
-#include <memory>
 
 using namespace std;
 using namespace lockless;
 
-BOOST_AUTO_TEST_CASE(basic_test)
+BOOST_AUTO_TEST_CASE(basicTest)
 {
     Log<2> logger;
 
@@ -42,7 +40,7 @@ BOOST_AUTO_TEST_CASE(basic_test)
     locklessCheckEq(d1[0].title, "T2");
 }
 
-BOOST_AUTO_TEST_CASE(merge_test)
+BOOST_AUTO_TEST_CASE(mergeTest)
 {
 
     Log<2> l0;
@@ -96,61 +94,5 @@ BOOST_AUTO_TEST_CASE(merge_test)
     auto d3 = logMerge(Log<10>(), l2, l0, l1).dump();
     locklessCheck(is_sorted(d3.begin(), d3.end()));
     locklessCheck(equal(d2.begin(), d2.end(), d3.begin()));
-#endif
-}
-
-BOOST_AUTO_TEST_CASE(parallel_test)
-{
-    enum {
-        LogThreads = 16,
-        DumpThreads = 16,
-        Iterations = 1000
-    };
-
-    Log<1024> logger;
-
-    array<atomic<size_t>, LogThreads> counters;
-    for (auto& c : counters) c.store(0);
-
-    std::atomic<size_t> done(0);
-
-    auto doLogThread = [&] (unsigned id) {
-        for (size_t i = 0; i < Iterations; ++i)
-            logger.log(static_cast<LogType>(id), "", "");
-
-        done++;
-    };
-
-    auto doDumpThread = [&] () {
-        bool exit = false;
-
-        while (true) {
-            auto dump = logger.dump();
-
-            for (const auto& entry : dump)
-                counters[static_cast<unsigned>(entry.type)]++;
-
-            // Ensures that we do one last dump before we quit.
-            if (exit) break;
-            exit = done.load() == LogThreads;
-        }
-    };
-
-    array<unique_ptr<thread>, LogThreads> logThreads;
-    for (unsigned id = 0; id < LogThreads; ++id)
-        logThreads[id].reset(new thread(bind(doLogThread, id)));
-
-    array<unique_ptr<thread>, DumpThreads> dumpThreads;
-    for (auto& th : dumpThreads)
-        th.reset(new thread(doDumpThread));
-
-    for (auto& th : logThreads) th->join();
-    for (auto& th : dumpThreads) th->join();
-
-    // There's no way we can guarantee to catch all the logs unless we have
-    // enough cores. 2 cores just won't cut it here.
-#if 0
-    for (auto& c : counters)
-        locklessCheckEq(c.load(), Iterations);
 #endif
 }

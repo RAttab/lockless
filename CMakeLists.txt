@@ -72,6 +72,7 @@ endfunction()
 
 
 lockless_test(log)
+lockless_test(log_para)
 
 lockless_test(rcu)
 lockless_test(rcu_para)
