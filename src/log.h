@@ -29,6 +29,9 @@ namespace details {
 // Generates a unique tick for each log message.
 extern Clock<size_t> GlobalLogClock;
 
+/* Returns a unique identifier for the current thread. */
+size_t threadId();
+
 } // namespace details
 
 
@@ -53,9 +56,10 @@ std::string to_string(LogType type);
 struct LogEntry
 {
     template<typename Title, typename Msg>
-    LogEntry(LogType type, size_t tick, Title&& title, Msg&& msg) :
+    LogEntry(LogType type, size_t tick, size_t tid, Title&& title, Msg&& msg) :
         type(type),
         tick(tick),
+        threadId(tid),
         title(std::forward<Title>(title)),
         msg(std::forward<Msg>(msg))
     {}
@@ -69,14 +73,17 @@ struct LogEntry
 
     bool operator== (const LogEntry& other) const
     {
-        return type == other.type &&
-            tick == other.tick &&
-            title == other.title &&
-            msg == other.msg;
+        return
+            type     == other.type &&
+            tick     == other.tick &&
+            threadId == other.threadId &&
+            title    == other.title &&
+            msg      == other.msg;
     }
 
     LogType type;
     size_t tick;
+    size_t threadId;
     std::string title;
     std::string msg;
 };
@@ -114,6 +121,7 @@ struct Log
 
         LogEntry* entry = new LogEntry(
                 type, tick,
+                details::threadId(),
                 std::forward<Title>(title),
                 std::forward<Msg>(msg));
 

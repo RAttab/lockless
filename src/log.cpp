@@ -21,6 +21,34 @@ namespace details { Clock<size_t> GlobalLogClock; }
 
 
 /******************************************************************************/
+/* THREAD ID                                                                  */
+/******************************************************************************/
+
+namespace details {
+
+namespace {
+
+atomic<size_t> GlobalThreadCounter{1};
+
+/* Need to double check how __thread is actually implemented. */
+__thread size_t LocalThreadId{0};
+
+} // namespace anonymous
+
+/* Could also use std::this_thread::get_id (equivalent to pthread_self) so the
+   ids are more difficult to read and understand.
+ */
+size_t threadId()
+{
+    if (!LocalThreadId)
+        LocalThreadId = GlobalThreadCounter.fetch_add(1);
+    return LocalThreadId;
+}
+
+} // namespace details
+
+
+/******************************************************************************/
 /* LOG TYPE                                                                   */
 /******************************************************************************/
 
@@ -48,8 +76,9 @@ print() const
 
     int written = snprintf(
             buffer.data(), buffer.size(),
-            "%8ld <%s> %-10s: %s",
+            "%8ld {%2ld} <%s> %-10s: %s",
             tick,
+            threadId,
             to_string(type).c_str(),
             title.c_str(),
             msg.c_str());
