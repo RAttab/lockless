@@ -84,15 +84,23 @@ BOOST_AUTO_TEST_CASE(mergeTest)
     locklessCheckEq(d1[6].title, "T8");
     locklessCheck(is_sorted(d1.begin(), d1.end()));
 
-#if 0 // Trouble getting this to compile.
     setup();
-    auto d2 = logMerge(Log<10>(), l0, l1, l2).dump();
+    auto d2 = LogAggregator(l0, l1, l2).dump();
     locklessCheckEq(d2.size(), 9);
     locklessCheck(is_sorted(d2.begin(), d2.end()));
 
+    auto eqFn = [] (const LogEntry& lhs, const LogEntry& rhs) {
+        return lhs.type == rhs.type && lhs.title == rhs.title;
+    };
+
     setup();
-    auto d3 = logMerge(Log<10>(), l2, l0, l1).dump();
-    locklessCheck(is_sorted(d3.begin(), d3.end()));
-    locklessCheck(equal(d2.begin(), d2.end(), d3.begin()));
-#endif
+    auto d3 = LogAggregator(l2, l0, l1).dump();
+    locklessCheck(equal(d2.begin(), d2.end(), d3.begin(), eqFn));
+
+    setup();
+    LogAggregator a1(l1, l2, l0);
+    logToStream(a1);
+    setup();
+    auto d4 = a1.dump();
+    locklessCheck(equal(d2.begin(), d2.end(), d4.begin(), eqFn));
 }

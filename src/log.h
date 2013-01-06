@@ -86,9 +86,11 @@ struct LogEntry
 /* LOG                                                                        */
 /******************************************************************************/
 
-template<size_t Size>
+template<size_t SizeT>
 struct Log
 {
+    enum { Size = SizeT };
+
     /* Blah
 
      */
@@ -101,8 +103,7 @@ struct Log
 
      */
     template<typename LogFirst, typename LogSecond>
-    Log(LogFirst&& first, LogSecond&& second) :
-        index(0)
+    Log(LogFirst&& first, LogSecond&& second) : index(0)
     {
         for (auto& entry : logs) entry.store(nullptr);
 
@@ -203,12 +204,19 @@ struct Log
         return dump;
     }
 
+    std::function< std::vector<LogEntry>() > dumpFn()
+    {
+        return [&] { return this->dump(); };
+    }
+
 private:
 
     std::atomic<size_t> index;
     std::array<std::atomic<LogEntry*>, Size> logs;
 
 };
+
+extern Log<1024> GlobalLog;
 
 
 /******************************************************************************/
@@ -249,6 +257,59 @@ struct DebuggingLog
     typedef Log<flag ? Size : 0> type;
 };
 
+/******************************************************************************/
+/* LOG AGGREGATOR                                                             */
+/******************************************************************************/
+
+struct LogAggregator
+{
+    LogAggregator() : totalSize(0) {}
+
+    template<typename... LogRest>
+    LogAggregator(LogRest&... rest) : totalSize(0) { add(rest...); }
+
+
+    void clear() { logs.clear(); }
+
+
+    template<typename LogT>
+    void add(LogT& log) {
+        logs.push_back(log.dumpFn());
+        totalSize += LogT::Size;
+    }
+
+    template<typename LogT, typename... LogRest>
+    void add(LogT& log, LogRest&... rest)
+    {
+        add(log);
+        add(rest...);
+    }
+
+
+    std::vector<LogEntry> dump()
+    {
+        std::vector<LogEntry> dump;
+        dump.reserve(totalSize);
+
+        for (auto& dumpFn : logs) {
+            auto d = dumpFn();
+            dump.insert(dump.end(), d.begin(), d.end());
+        }
+
+        std::sort(dump.begin(), dump.end());
+        return dump;
+    }
+
+    typedef std::function< std::vector<LogEntry>() > DumpFn;
+
+    DumpFn dumpFn() { return [&] { return this->dump(); }; }
+
+private:
+    std::vector<DumpFn> logs;
+    size_t totalSize;
+};
+
+
 
 /******************************************************************************/
 /* LOG SINK                                                                   */
@@ -268,32 +329,12 @@ void logToStream(
 /* Blah
 
  */
-template<typename Log>
-void logToStream(Log& log, std::ostream& stream = std::cerr)
+template<typename LogT>
+void logToStream(LogT& log, std::ostream& stream = std::cerr)
 {
     logToStream(log.dump(), stream);
 }
 
-/* Merge multiple logs together through template magicery. */
-template<typename LogBase, typename LogOther, typename... LogPack>
-LogBase logMerge(LogBase&& base, LogOther&& other, LogPack&&... pack)
-{
-    return logMerge(
-            LogBase(std::forward<LogBase>(base), std::forward<LogOther>(other)),
-            std::forward<LogPack>(pack)...);
-}
-template<typename LogBase, typename LogOther>
-LogBase logMerge(LogBase&& base, LogOther&& other)
-{
-    return LogBase(std::forward<LogBase>(base), std::forward<LogOther>(other));
-}
-
-
-/******************************************************************************/
-/* GLOBAL LOG                                                                 */
-/******************************************************************************/
-
-extern Log<1024> GlobalLog;
 
 } // lockless
 
