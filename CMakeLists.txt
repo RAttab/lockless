@@ -64,21 +64,18 @@ install(TARGETS lockless_log DESTINATION lib)
 # TESTS
 #------------------------------------------------------------------------------#
 
-add_executable(rcu_test tests/rcu_test.cpp)
-target_link_libraries(rcu_test lockless_log boost_unit_test_framework)
-add_test(rcu bin/rcu_test)
+function(lockless_test name)
+    add_executable(${name}_test tests/${name}_test.cpp)
+    target_link_libraries(${name}_test lockless_log boost_unit_test_framework)
+    add_test(${name} bin/${name}_test)
+endfunction()
 
-add_executable(rcu_perf_test tests/rcu_perf_test.cpp)
-target_link_libraries(rcu_perf_test lockless_log)
 
-add_executable(log_test tests/log_test.cpp)
-target_link_libraries(log_test lockless_log boost_unit_test_framework)
-add_test(log bin/log_test)
+lockless_test(log)
 
-add_executable(map_test tests/map_test.cpp)
-target_link_libraries(map_test lockless_log boost_unit_test_framework)
-add_test(map bin/map_test)
+lockless_test(rcu)
+lockless_test(rcu_para)
+lockless_test(rcu_perf)
 
-add_executable(map_para_test tests/map_para_test.cpp)
-target_link_libraries(map_para_test lockless_log boost_unit_test_framework)
-add_test(map_para bin/map_para_test)
+lockless_test(map)
+lockless_test(map_para)
