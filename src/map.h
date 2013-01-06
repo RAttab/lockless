@@ -294,6 +294,7 @@ private:
 public:
 
     DebuggingLog<1024, DebugMap>::type log;
+    LogAggregator allLogs() { return LogAggregator(log, rcu.log); }
 
 };
 

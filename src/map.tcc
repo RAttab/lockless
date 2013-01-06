@@ -334,7 +334,7 @@ insertImpl(
 
         KeyAtom bucketKeyAtom = bucket.keyAtom.load();
 
-        log.log(LogMap, "ins-impl-1", "bucket=%ld, key=%s, ins=%s",
+        log.log(LogMap, "ins-1", "bucket=%ld, key=%s, ins=%s",
                 probeBucket,
                 fmtAtom<MKey>(bucketKeyAtom).c_str(),
                 fmtAtom<MKey>(keyAtom).c_str());
@@ -382,7 +382,7 @@ insertImpl(
         // we fail.
         while (true) {
 
-            log.log(LogMap, "ins-impl-2", "bucket=%ld, value=%s, ins=%s",
+            log.log(LogMap, "ins-2", "bucket=%ld, value=%s, ins=%s",
                     probeBucket,
                     fmtAtom<MValue>(bucketValueAtom).c_str(),
                     fmtAtom<MValue>(valueAtom).c_str());
@@ -414,7 +414,7 @@ insertImpl(
         }
     }
 
-    log.log(LogMap, "ins-impl-3", "tombs=%ld, t=%p", tombstones, t);
+    log.log(LogMap, "ins-3", "tombs=%ld, t=%p", tombstones, t);
 
     // The key is definetively not in this table, try the next.
     doResize(t, tombstones);
@@ -453,7 +453,7 @@ findImpl(Table* t, const size_t hash, const Key& key)
 
         KeyAtom keyAtom = bucket.keyAtom.load();
 
-        log.log(LogMap, "fnd-impl-1", "bucket=%ld, key=%s, target=%s",
+        log.log(LogMap, "fnd-1", "bucket=%ld, key=%s, target=%s",
                 probeBucket,
                 fmtAtom<MKey>(keyAtom).c_str(),
                 std::to_string(key).c_str());
@@ -480,7 +480,7 @@ findImpl(Table* t, const size_t hash, const Key& key)
 
         ValueAtom valueAtom = bucket.valueAtom.load();
 
-        log.log(LogMap, "fnd-impl-2", "bucket=%ld, value=%s",
+        log.log(LogMap, "fnd-2", "bucket=%ld, value=%s",
                 probeBucket, fmtAtom<MKey>(valueAtom).c_str());
 
         // We might be in the middle of a move op so try the bucket again so
@@ -504,7 +504,7 @@ findImpl(Table* t, const size_t hash, const Key& key)
                 true, ValueAtomizer::load(clearMarks<MValue>(valueAtom)));
     }
 
-    log.log(LogMap, "fnd-impl-3", "tomb=%ld, t=%p", tombstones, t);
+    log.log(LogMap, "fnd-3", "tomb=%ld, t=%p", tombstones, t);
 
     // The key is definetively not in this table, try the next.
     doResize(t, tombstones);
@@ -542,7 +542,7 @@ compareExchangeImpl(
 
         KeyAtom keyAtom = bucket.keyAtom.load();
 
-        log.log(LogMap, "xchg-impl-1", "bucket=%ld, key=%s, target=%s",
+        log.log(LogMap, "xch-1", "bucket=%ld, key=%s, target=%s",
                 probeBucket,
                 fmtAtom<MKey>(keyAtom).c_str(),
                 std::to_string(key).c_str());
@@ -570,7 +570,7 @@ compareExchangeImpl(
 
         while (true) {
 
-            log.log(LogMap, "xchg-impl-2",
+            log.log(LogMap, "xch-2",
                     "bucket=%ld, value=%s, expected= %s, desired=%s",
                     probeBucket,
                     fmtAtom<MValue>(valueAtom).c_str(),
@@ -606,7 +606,7 @@ compareExchangeImpl(
         }
     }
 
-    log.log(LogMap, "xchg-impl-3", "tomb=%ld, t=%p", tombstones, t);
+    log.log(LogMap, "xch-3", "tomb=%ld, t=%p", tombstones, t);
 
     // The key is definetively not in this table, try the next.
     doResize(t, tombstones);
@@ -643,7 +643,7 @@ removeImpl(Table* t, const size_t hash, const Key& key)
 
         KeyAtom keyAtom = bucket.keyAtom.load();
 
-        log.log(LogMap, "rmv-impl-1", "bucket=%ld, key=%s, target=%s",
+        log.log(LogMap, "rmv-1", "bucket=%ld, key=%s, target=%s",
                 probeBucket,
                 fmtAtom<MKey>(keyAtom).c_str(),
                 std::to_string(key).c_str());
@@ -666,7 +666,7 @@ removeImpl(Table* t, const size_t hash, const Key& key)
 
         ValueAtom valueAtom = bucket.valueAtom.load();
 
-        log.log(LogMap, "rmv-impl-2", "bucket=%ld, value=%s",
+        log.log(LogMap, "rmv-2", "bucket=%ld, value=%s",
                 probeBucket, fmtAtom<MKey>(valueAtom).c_str());
 
         // We may be in the middle of a move so try the bucket again.
@@ -684,7 +684,7 @@ removeImpl(Table* t, const size_t hash, const Key& key)
         // the bucket again.
         KeyAtom newKeyAtom = setTombstone<MKey>(keyAtom);
 
-        log.log(LogMap, "rmv-impl-3", "bucket=%ld, newKey=%s",
+        log.log(LogMap, "rmv-3", "bucket=%ld, newKey=%s",
                 probeBucket, fmtAtom<MKey>(newKeyAtom).c_str());
 
         if (!bucket.keyAtom.compare_exchange_strong(keyAtom, newKeyAtom)) {
@@ -696,7 +696,7 @@ removeImpl(Table* t, const size_t hash, const Key& key)
         // op. Also prevent any further replace op by tombstoning the value.
         ValueAtom newValueAtom = setTombstone<MValue>(valueAtom);
 
-        log.log(LogMap, "rmv-impl-4", "bucket=%ld, newValue=%s",
+        log.log(LogMap, "rmv-4", "bucket=%ld, newValue=%s",
                 probeBucket, fmtAtom<MKey>(newValueAtom).c_str());
 
         valueAtom = bucket.valueAtom.exchange(newValueAtom);
@@ -709,7 +709,7 @@ removeImpl(Table* t, const size_t hash, const Key& key)
                 true, ValueAtomizer::load(clearMarks<MValue>(valueAtom)));
     }
 
-    log.log(LogMap, "rmv-impl-5", "tomb=%ld, table=%p", tombstones, t);
+    log.log(LogMap, "rmv-5", "tomb=%ld, table=%p", tombstones, t);
 
     // The key is definetively not in this table, try the next.
     doResize(t, tombstones);
@@ -752,7 +752,7 @@ resizeImpl(size_t newCapacity, bool force)
     do {
         Table* curTable = prev->load();
 
-        log.log(LogMap, "rsz-impl-1",
+        log.log(LogMap, "rsz-1",
                 "prev=%p, prevTable=%p, curTable=%p, curCapacity=%ld",
                 prev, prevTable, curTable, curTable ? curTable->capacity : 0);
 
@@ -778,7 +778,7 @@ resizeImpl(size_t newCapacity, bool force)
 
     Table* newTable = safeNewTable.release();
 
-    log.log(LogMap, "rsz-impl-2", "prev=%p, prevTable=%p, next=%p, new=%p",
+    log.log(LogMap, "rsz-2", "prev=%p, prevTable=%p, next=%p, new=%p",
             prev, prevTable, prev->load(), newTable);
 
     if (!prevTable) return;
@@ -801,7 +801,7 @@ resizeImpl(size_t newCapacity, bool force)
     do {
         Table* curTable = prev->load();
 
-        log.log(LogMap, "rsz-impl-3",
+        log.log(LogMap, "rsz-3",
                 "prev=%p, prevTable=%p, curTable=%p, target=%p",
                 prev, prevTable, curTable, toRemove);
 
