@@ -51,7 +51,7 @@ void check(bool pred, const std::string& str, const CheckContext& ctx)
 }
 
 template<typename First, typename Second>
-std::string checkStringify(
+std::string checkStr(
         const char* op,
         const char* first,  const First& firstVal,
         const char* second, const Second& secondVal)
@@ -70,15 +70,16 @@ std::string checkStringify(
 /* CHECK PREDICATES                                                           */
 /******************************************************************************/
 
-#define locklessCheckCtx(_pred_, _ctx_)                  \
-    check((_pred_), (#_pred_), _ctx_)
+#define locklessCheckCtx(_pred_, _ctx_)         \
+    lockless::check((_pred_), (#_pred_), _ctx_)
 
 #define locklessCheck(_pred_) \
     locklessCheckCtx(_pred_, locklessCtx())
 
-#define locklessCheckOpCtx(_op_, _first_, _second_, _ctx_)       \
-    check(  (_first_) _op_ (_second_),                                  \
-            checkStringify(#_op_, #_first_, _first_, #_second_, _second_), \
+#define locklessCheckOpCtx(_op_, _first_, _second_, _ctx_)              \
+    lockless::check(                                                    \
+            (_first_) _op_ (_second_),                                  \
+            lockless::checkStr(#_op_, #_first_, _first_, #_second_, _second_), \
             _ctx_)
 
 #define locklessCheckOp(_op_, _first_, _second_) \
@@ -87,6 +88,9 @@ std::string checkStringify(
 
 #define locklessCheckEq(_first_, _second_) \
     locklessCheckOp(==, _first_, _second_)
+
+#define locklessCheckNe(_first_, _second_) \
+    locklessCheckOp(!=, _first_, _second_)
 
 #define locklessCheckLt(_first_, _second_) \
     locklessCheckOp(< , _first_, _second_)
