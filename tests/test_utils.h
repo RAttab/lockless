@@ -185,16 +185,16 @@ std::string fmtTitle(const std::string& title, char fill = '-')
 
 struct ParallelTest
 {
-    typedef std::function<unsigned(unsigned)> TestFn;
+    typedef std::function<void(unsigned)> TestFn;
 
     void add(const TestFn& fn, unsigned thCount)
     {
         configs.push_back(std::make_pair(fn, thCount));
     }
 
-    unsigned run()
+    void run()
     {
-        std::vector< std::vector< std::future<unsigned> > > futures;
+        std::vector< std::vector< std::future<void> > > futures;
         futures.resize(configs.size());
         for (size_t th = 0; th < configs.size(); ++th)
             futures[th].reserve(configs[th].second);
@@ -210,13 +210,11 @@ struct ParallelTest
                 if (!thCount) continue;
                 remaining += --thCount;
 
-                std::packaged_task<unsigned()> task(std::bind(testFn, thCount));
+                std::packaged_task<void()> task(std::bind(testFn, thCount));
                 futures[th].emplace_back(std::move(task.get_future()));
                 std::thread(std::move(task)).detach();
             }
         } while (remaining > 0);
-
-        unsigned errors = 0;
 
         // Poll each futures until they become available.
         do {
@@ -233,7 +231,7 @@ struct ParallelTest
                         continue;
                     }
 
-                    errors += futures[i][j].get();
+                    futures[i][j].get();
                     processed++;
                 }
             }
@@ -242,8 +240,6 @@ struct ParallelTest
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
 
         } while (remaining > 0);
-
-        return errors;
     }
 
     std::vector< std::pair<TestFn, unsigned> > configs;
@@ -360,7 +356,7 @@ private:
 template<typename Engine>
 std::string randomString(size_t length, Engine& engine)
 {
-    const std::string source = 
+    const std::string source =
         "abcdefghijklmnopqrstuvwxyz"
         "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
         "0123456789";

@@ -44,7 +44,6 @@ BOOST_AUTO_TEST_CASE(simpleTest)
                 RcuGuard guard(rcu);
                 rcu.defer([&, id] { counters[id]++; });
             }
-            return 0;
         };
 
         ParallelTest test;
@@ -94,7 +93,6 @@ BOOST_AUTO_TEST_CASE(complexTest)
         }
 
         doneCount++;
-        return 0;
     };
 
     auto doReadThread = [&] (unsigned) {
@@ -107,7 +105,6 @@ BOOST_AUTO_TEST_CASE(complexTest)
             }
 
         } while (doneCount.load() < WriteThreads);
-        return 0;
     };
 
     ParallelTest test;

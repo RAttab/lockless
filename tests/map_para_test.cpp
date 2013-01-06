@@ -90,7 +90,6 @@ void noContentionTest(const function< pair<Key, Value>() >& gen)
                 // logToStream(map.log);
             }
         }
-        return 0;
     };
 
     ParallelTest test;
