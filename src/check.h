@@ -91,10 +91,14 @@ std::string checkStr(
     locklessCheckCtx(_pred_, _log_, locklessCtx())
 
 #define locklessCheckOpCtx(_op_, _first_, _second_, _log_, _ctx_)       \
-    lockless::check(                                                    \
-            (_first_) _op_ (_second_),                                  \
-            lockless::checkStr(#_op_, #_first_, _first_, #_second_, _second_), \
-            _log_, _ctx_)
+    do {                                                                \
+        decltype(_first_) firstVal = (_first_);                         \
+        decltype(_second_) secondVal = (_second_);                      \
+        lockless::check(                                                \
+                firstVal _op_ secondVal,                                \
+                lockless::checkStr(#_op_, #_first_, firstVal, #_second_, secondVal), \
+                _log_, _ctx_);                                          \
+    } while (false)
 
 #define locklessCheckOp(_op_, _first_, _second_, _log_) \
     locklessCheckOpCtx(_op_, _first_, _second_, _log_, locklessCtx())
