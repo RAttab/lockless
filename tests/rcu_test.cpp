@@ -38,19 +38,19 @@ BOOST_AUTO_TEST_CASE(epochTest)
     size_t e1 = rcu.enter();
     size_t e2 = rcu.enter();
 
-    BOOST_CHECK_NE(e0, e1);
-    BOOST_CHECK_EQUAL(e1, e2);
+    locklessCheckNe(e0, e1);
+    locklessCheckEq(e1, e2);
     rcu.exit(e2);
 
     size_t e3 = rcu.enter();
-    BOOST_CHECK_EQUAL(e2, e3);
+    locklessCheckEq(e2, e3);
 
     rcu.exit(e0);
     size_t e4 = rcu.enter();
-    BOOST_CHECK_NE(e3, e4);
+    locklessCheckNe(e3, e4);
 
     size_t e5 = rcu.enter();
-    BOOST_CHECK_EQUAL(e4, e5);
+    locklessCheckEq(e4, e5);
 
     rcu.exit(e1);
     rcu.exit(e3);
@@ -71,18 +71,18 @@ BOOST_AUTO_TEST_CASE(simpleDeferTest)
 
     size_t e1 = rcu.enter();
     rcu.defer(deferFn);
-    BOOST_CHECK_EQUAL(rcu.enter(), e1);
+    locklessCheckEq(rcu.enter(), e1);
     rcu.exit(e0);
 
-    BOOST_CHECK_EQUAL(deferred, 0);
+    locklessCheckEq(deferred, 0);
 
     size_t e2 = rcu.enter();
-    BOOST_CHECK_EQUAL(deferred, 1);
+    locklessCheckEq(deferred, 1);
 
     rcu.exit(e1);
     rcu.exit(e1);
     size_t e3 = rcu.enter();
-    BOOST_CHECK_EQUAL(deferred, 2);
+    locklessCheckEq(deferred, 2);
 
     rcu.exit(e2);
     rcu.exit(e3);
@@ -100,12 +100,12 @@ BOOST_AUTO_TEST_CASE(complexDeferTest)
         for (size_t j = 0; j < i; ++j)
             rcu.defer([&, i] { counters[i]++; });
 
-        BOOST_CHECK_EQUAL(rcu.enter(), i + 1);
+        locklessCheckEq(rcu.enter(), i + 1);
         if (i > 0) rcu.exit(i);
 
         for (size_t j = 0; j < counters.size(); ++j) {
-            if (i > 0 && j < i) BOOST_CHECK_EQUAL(counters[j], j);
-            else BOOST_CHECK_EQUAL(counters[j], 0);
+            if (i > 0 && j < i) locklessCheckEq(counters[j], j);
+            else locklessCheckEq(counters[j], 0);
         }
     }
 
@@ -125,10 +125,10 @@ BOOST_AUTO_TEST_CASE(destructorDeferTest)
         rcu.enter();
         rcu.defer(deferFn);
 
-        BOOST_CHECK_EQUAL(counter, 0);
+        locklessCheckEq(counter, 0);
     }
 
-    BOOST_CHECK_EQUAL(counter, 2);
+    locklessCheckEq(counter, 2);
 }
 
 
@@ -188,5 +188,5 @@ BOOST_AUTO_TEST_CASE(fuzzTest)
     }
 
     for (const auto& exp: expected)
-        BOOST_CHECK_EQUAL(counters[exp.first], exp.second);
+        locklessCheckEq(counters[exp.first], exp.second);
 }

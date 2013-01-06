@@ -12,6 +12,7 @@
 #define LOCKLESS_CHECK_ABORT 1
 
 #include "rcu.h"
+#include "check.h"
 #include "test_utils.h"
 
 #include <boost/test/unit_test.hpp>
@@ -52,7 +53,7 @@ BOOST_AUTO_TEST_CASE(simpleTest)
     }
 
     for (size_t i = 0; i < counters.size(); ++i)
-        BOOST_CHECK_EQUAL(counters[i], Iterations);
+        locklessCheckEq(counters[i], Iterations);
 }
 
 
@@ -73,7 +74,7 @@ BOOST_AUTO_TEST_CASE(complexTest)
 
         Obj() : value(MAGIC_VALUE) {}
         ~Obj() { check(); value = 0; }
-        void check() const { assert(value == MAGIC_VALUE); }
+        void check() const { locklessCheckEq(value, MAGIC_VALUE); }
     };
 
     Rcu rcu;
