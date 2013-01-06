@@ -99,39 +99,6 @@ struct Log
         for (auto& entry : logs) entry.store(nullptr);
     }
 
-    /* Blah
-
-     */
-    template<typename LogFirst, typename LogSecond>
-    Log(LogFirst&& first, LogSecond&& second) : index(0)
-    {
-        for (auto& entry : logs) entry.store(nullptr);
-
-        auto firstDump = first.dump();
-        auto secondDump = second.dump();
-
-        size_t i = 0;
-        size_t j = 0;
-
-        while (i + j < firstDump.size() + secondDump.size()) {
-            LogEntry* entry;
-
-            if (i == firstDump.size())
-                entry = &secondDump[j++];
-
-            else if (j == secondDump.size())
-                entry = &firstDump[i++];
-
-            else if (secondDump[j] < firstDump[i]) {
-                entry = &secondDump[j++];
-            }
-
-            else entry = &firstDump[i++];
-
-            log(entry->type, entry->title, entry->msg, entry->tick);
-        }
-    }
-
     Log(const Log& other) = delete;
     Log& operator=(const Log& other) = delete;
 
@@ -216,9 +183,6 @@ private:
 
 };
 
-extern Log<1024> GlobalLog;
-
-
 /******************************************************************************/
 /* DEBUG LOG                                                                  */
 /******************************************************************************/
@@ -226,10 +190,9 @@ extern Log<1024> GlobalLog;
 template<>
 struct Log<0>
 {
-    Log() {}
+    enum { Size = 0 };
 
-    template<typename LogFirst, typename LogSecond>
-    Log(LogFirst&&, LogSecond&&) {}
+    Log() {}
 
     Log(const Log&) = delete;
     Log& operator=(const Log&) = delete;
@@ -249,6 +212,11 @@ struct Log<0>
     {}
 
     std::vector<LogEntry> dump() { return {}; }
+
+    std::function< std::vector<LogEntry>() > dumpFn()
+    {
+        return [&] { return this->dump(); };
+    }
 };
 
 template<size_t Size, bool flag>
@@ -256,6 +224,14 @@ struct DebuggingLog
 {
     typedef Log<flag ? Size : 0> type;
 };
+
+
+/******************************************************************************/
+/* NULL LOG                                                                   */
+/******************************************************************************/
+
+namespace { extern Log<0> NullLog; }
+
 
 /******************************************************************************/
 /* LOG AGGREGATOR                                                             */
@@ -269,13 +245,15 @@ struct LogAggregator
     LogAggregator(LogRest&... rest) : totalSize(0) { add(rest...); }
 
 
+    size_t size() const { return totalSize; }
+
     void clear() { logs.clear(); }
 
 
     template<typename LogT>
     void add(LogT& log) {
         logs.push_back(log.dumpFn());
-        totalSize += LogT::Size;
+        totalSize += log.size();
     }
 
     template<typename LogT, typename... LogRest>
@@ -284,7 +262,6 @@ struct LogAggregator
         add(log);
         add(rest...);
     }
-
 
     std::vector<LogEntry> dump()
     {
@@ -310,7 +287,6 @@ private:
 };
 
 
-
 /******************************************************************************/
 /* LOG SINK                                                                   */
 /******************************************************************************/
@@ -318,7 +294,7 @@ private:
 /* Blah
 
  */
-void logToStream(
+void dumpToStream(
         const std::vector<LogEntry>& dump, std::ostream& stream = std::cerr)
 {
     for (const LogEntry& entry : dump)
@@ -332,9 +308,8 @@ void logToStream(
 template<typename LogT>
 void logToStream(LogT& log, std::ostream& stream = std::cerr)
 {
-    logToStream(log.dump(), stream);
+    dumpToStream(log.dump(), stream);
 }
-
 
 } // lockless
 
