@@ -24,24 +24,22 @@ using namespace lockless;
 
 BOOST_AUTO_TEST_CASE(resizeTest)
 {
-    int a = 2;
-    locklessCheckEq(a, 10);
 
     cerr << fmtTitle("init", '=') << endl;
     Map<size_t, size_t> map;
-    // logToStream(map.log);
+    auto log = map.allLogs();
 
     cerr << fmtTitle("resize 0", '=') << endl;
     map.resize(1ULL << 6);
-    // logToStream(map.log);
+    locklessCheckGe(map.capacity(), 1ULL << 6, log);
 
     cerr << fmtTitle("resize 1", '=') << endl;
     map.resize(1ULL << 7);
-    // logToStream(map.log);
+    locklessCheckGe(map.capacity(), 1ULL << 7, log);
 
     cerr << fmtTitle("resize 2", '=') << endl;
     map.resize(1ULL << 8);
-    // logToStream(map.log);
+    locklessCheckGe(map.capacity(), 1ULL << 8, log);
 }
 
 
@@ -50,25 +48,26 @@ BOOST_AUTO_TEST_CASE(basicOpTest)
     enum { Size = 100 };
 
     Map<size_t, size_t> map;
+    auto& log = map.log;
 
-    locklessCheckEq(map.size(), 0);
+    locklessCheckEq(map.size(), 0, log);
 
     cerr << fmtTitle("fail find", '=') << endl;
 
     for (size_t i = 0; i < Size; ++i) {
-        checkPair(map.find(i), locklessCtx());
-        checkPair(map.remove(i), locklessCtx());
-        locklessCheck(!map.compareExchange(i, i, i*i));
+        checkPair(map.find(i), log, locklessCtx());
+        checkPair(map.remove(i), log, locklessCtx());
+        locklessCheck(!map.compareExchange(i, i, i*i), log);
     }
 
     cerr << fmtTitle("insert", '=') << endl;
 
     for (size_t i = 0; i < Size; ++i) {
-        locklessCheck(map.insert(i, i));
-        locklessCheck(!map.insert(i, i+1));
-        locklessCheckEq(map.size(), i + 1);
+        locklessCheck(map.insert(i, i), log);
+        locklessCheck(!map.insert(i, i+1), log);
+        locklessCheckEq(map.size(), i + 1, log);
 
-        checkPair(map.find(i), i, locklessCtx());
+        checkPair(map.find(i), i, log, locklessCtx());
     }
 
     size_t capacity = map.capacity();
@@ -78,39 +77,39 @@ BOOST_AUTO_TEST_CASE(basicOpTest)
     for (size_t i = 0; i < Size; ++i) {
         size_t exp;
 
-        locklessCheck(!map.compareExchange(i, exp = i+1, i));
-        locklessCheckEq(exp, i);
-        locklessCheck( map.compareExchange(i, exp = i, i+1));
+        locklessCheck(!map.compareExchange(i, exp = i+1, i), log);
+        locklessCheckEq(exp, i, log);
+        locklessCheck( map.compareExchange(i, exp = i, i+1), log);
 
-        checkPair(map.find(i), i+1, locklessCtx());
+        checkPair(map.find(i), i+1, log, locklessCtx());
 
-        locklessCheck(!map.compareExchange(i, exp = i, i+1));
-        locklessCheckEq(exp, i+1);
-        locklessCheck( map.compareExchange(i, exp = i+1, i));
+        locklessCheck(!map.compareExchange(i, exp = i, i+1), log);
+        locklessCheckEq(exp, i+1, log);
+        locklessCheck( map.compareExchange(i, exp = i+1, i), log);
 
-        checkPair(map.find(i), i, locklessCtx());
-        locklessCheck(!map.insert(i, i+1));
+        checkPair(map.find(i), i, log, locklessCtx());
+        locklessCheck(!map.insert(i, i+1), log);
     }
 
-    locklessCheckEq(map.size(), Size);
-    locklessCheckEq(map.capacity(), capacity);
+    locklessCheckEq(map.size(), Size, log);
+    locklessCheckEq(map.capacity(), capacity, log);
 
     cerr << fmtTitle("remove", '=') << endl;
 
     for (size_t i = 0; i < Size; ++i) {
-        checkPair(map.remove(i), i, locklessCtx());
-        checkPair(map.remove(i), locklessCtx());
+        checkPair(map.remove(i), i, log, locklessCtx());
+        checkPair(map.remove(i), log, locklessCtx());
     }
 
     cerr << fmtTitle("check", '=') << endl;
 
     for (size_t i = 0; i < Size; ++i) {
-        checkPair(map.find(i), locklessCtx());
-        checkPair(map.remove(i), locklessCtx());
+        checkPair(map.find(i), log, locklessCtx());
+        checkPair(map.remove(i), log, locklessCtx());
 
         size_t exp;
-        locklessCheck(!map.compareExchange(i, exp = i, i+1));
-        locklessCheckEq(exp, i);
+        locklessCheck(!map.compareExchange(i, exp = i, i+1), log);
+        locklessCheckEq(exp, i, log);
     }
 }
 
@@ -132,15 +131,19 @@ BOOST_AUTO_TEST_CASE(erraticRemoveTest)
 {
     enum { Size = 100 };
     Map<size_t, size_t> map;
+    auto log = map.allLogs();
 
     cerr << fmtTitle("erratic-remove", '=') << endl;
 
     for (size_t i = 0; i < Size; ++i)
         map.insert(i, i);
 
+    size_t capacity = map.capacity();
+
     for (size_t i = 0; i < Size; ++i) {
         map.remove(i);
         map.remove(i);
+        locklessCheckEq(map.capacity(), capacity, log);
     }
 }
 
@@ -150,6 +153,8 @@ void fuzzTest(const function< pair<Key, Value>() >& gen, Engine& rng)
     enum { Iterations = 2000 };
 
     Map<Key, Value> map;
+    auto log = map.allLogs();
+
     vector< pair<Key, Value> > keys;
 
     uniform_int_distribution<size_t> actionRnd(0, 10);
@@ -165,8 +170,8 @@ void fuzzTest(const function< pair<Key, Value>() >& gen, Engine& rng)
 
         if (keys.empty() || action < 5) {
             auto ret = gen();
-            locklessCheck(map.insert(ret.first, ret.second));
-            locklessCheck(!map.insert(ret.first, ret.second));
+            locklessCheck(map.insert(ret.first, ret.second), log);
+            locklessCheck(!map.insert(ret.first, ret.second), log);
             keys.push_back(ret);
         }
 
@@ -175,9 +180,9 @@ void fuzzTest(const function< pair<Key, Value>() >& gen, Engine& rng)
             size_t index = indexRnd();
             auto& kv = keys[index];
 
-            locklessCheck(map.compareExchange(kv.first, kv.second, newValue));
-            locklessCheck(!map.compareExchange(kv.first, kv.second, newValue));
-            locklessCheckEq(kv.second, newValue);
+            locklessCheck(map.compareExchange(kv.first, kv.second, newValue), log);
+            locklessCheck(!map.compareExchange(kv.first, kv.second, newValue), log);
+            locklessCheckEq(kv.second, newValue, log);
 
             keys[index].second = newValue;
         }
@@ -186,16 +191,16 @@ void fuzzTest(const function< pair<Key, Value>() >& gen, Engine& rng)
             size_t index = indexRnd();
             auto& kv = keys[index];
 
-            checkPair(map.remove(kv.first), kv.second, locklessCtx());
-            checkPair(map.remove(kv.first), locklessCtx());
+            checkPair(map.remove(kv.first), kv.second, log, locklessCtx());
+            checkPair(map.remove(kv.first), log, locklessCtx());
             keys.erase(keys.begin() + index);
         }
 
-        locklessCheckEq(map.size(), keys.size());
+        locklessCheckEq(map.size(), keys.size(), log);
 
         for (size_t j = 0; j < keys.size(); ++j) {
             auto& kv = keys[j];
-            checkPair(map.find(kv.first), kv.second, locklessCtx());
+            checkPair(map.find(kv.first), kv.second, log, locklessCtx());
         }
 
     }
@@ -204,7 +209,7 @@ void fuzzTest(const function< pair<Key, Value>() >& gen, Engine& rng)
 
     for (size_t i = 0; i < keys.size(); ++i) {
         auto& kv = keys[i];
-        checkPair(map.remove(kv.first), kv.second, locklessCtx());
+        checkPair(map.remove(kv.first), kv.second, log, locklessCtx());
     }
 }
 

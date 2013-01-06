@@ -19,30 +19,29 @@ using namespace lockless;
 
 BOOST_AUTO_TEST_CASE(basicTest)
 {
-    Log<2> logger;
+    Log<2> log;
 
-    logger.log(LogRcu, "T0", "boo!");
-    logger.log(LogMap, "T1", "number=%d", 42);
+    log.log(LogRcu, "T0", "boo!");
+    log.log(LogMap, "T1", "number=%d", 42);
 
-    auto d0 = logger.dump();
-    locklessCheckEq(d0.size(), 2);
-    locklessCheckEq(d0[0].type, LogRcu);
-    locklessCheckEq(d0[0].title, "T0");
-    locklessCheckEq(d0[1].type, LogMap);
-    locklessCheckEq(d0[1].title, "T1");
-    locklessCheckLt(d0[0].tick, d0[1].tick);
+    auto d0 = log.dump();
+    locklessCheckEq(d0.size(), 2, NullLog);
+    locklessCheckEq(d0[0].type, LogRcu, NullLog);
+    locklessCheckEq(d0[0].title, "T0", NullLog);
+    locklessCheckEq(d0[1].type, LogMap, NullLog);
+    locklessCheckEq(d0[1].title, "T1", NullLog);
+    locklessCheckLt(d0[0].tick, d0[1].tick, NullLog);
 
-    logger.log(LogQueue, "T2", "blah");
+    log.log(LogQueue, "T2", "blah");
 
-    auto d1 = logger.dump();
-    locklessCheckEq(d1.size(), 1);
-    locklessCheckEq(d1[0].type, LogQueue);
-    locklessCheckEq(d1[0].title, "T2");
+    auto d1 = log.dump();
+    locklessCheckEq(d1.size(), 1, NullLog);
+    locklessCheckEq(d1[0].type, LogQueue, NullLog);
+    locklessCheckEq(d1[0].title, "T2", NullLog);
 }
 
 BOOST_AUTO_TEST_CASE(mergeTest)
 {
-
     Log<2> l0;
     Log<3> l1;
     Log<4> l2;
@@ -64,43 +63,22 @@ BOOST_AUTO_TEST_CASE(mergeTest)
     };
 
     setup();
-    Log<2> m0(l0, l1);
-    auto d0 = m0.dump();
-    locklessCheckEq(d0.size(), 2);
-    locklessCheckEq(d0[0].title, "T5");
-    locklessCheckEq(d0[1].title, "T7");
-    locklessCheckLt(d0[0].tick, d0[1].tick);
-
-    setup();
-    Log<10> m1(l2, l1);
-    auto d1 = m1.dump();
-    locklessCheckEq(d1.size(), 7);
-    locklessCheckEq(d1[0].title, "T2");
-    locklessCheckEq(d1[1].title, "T3");
-    locklessCheckEq(d1[2].title, "T4");
-    locklessCheckEq(d1[3].title, "T5");
-    locklessCheckEq(d1[4].title, "T6");
-    locklessCheckEq(d1[5].title, "T7");
-    locklessCheckEq(d1[6].title, "T8");
-    locklessCheck(is_sorted(d1.begin(), d1.end()));
-
-    setup();
-    auto d2 = LogAggregator(l0, l1, l2).dump();
-    locklessCheckEq(d2.size(), 9);
-    locklessCheck(is_sorted(d2.begin(), d2.end()));
+    auto d0 = LogAggregator(l0, l1, l2).dump();
+    locklessCheckEq(d0.size(), 9, NullLog);
+    locklessCheck(is_sorted(d0.begin(), d0.end()), NullLog);
 
     auto eqFn = [] (const LogEntry& lhs, const LogEntry& rhs) {
         return lhs.type == rhs.type && lhs.title == rhs.title;
     };
 
     setup();
-    auto d3 = LogAggregator(l2, l0, l1).dump();
-    locklessCheck(equal(d2.begin(), d2.end(), d3.begin(), eqFn));
+    auto d1 = LogAggregator(l2, l0, l1).dump();
+    locklessCheck(equal(d0.begin(), d0.end(), d1.begin(), eqFn), NullLog);
 
     setup();
     LogAggregator a1(l1, l2, l0);
     logToStream(a1);
     setup();
-    auto d4 = a1.dump();
-    locklessCheck(equal(d2.begin(), d2.end(), d4.begin(), eqFn));
+    auto d2 = a1.dump();
+    locklessCheck(equal(d0.begin(), d0.end(), d2.begin(), eqFn), NullLog);
 }

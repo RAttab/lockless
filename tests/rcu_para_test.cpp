@@ -52,7 +52,7 @@ BOOST_AUTO_TEST_CASE(simpleTest)
     }
 
     for (size_t i = 0; i < counters.size(); ++i)
-        locklessCheckEq(counters[i], Iterations);
+        locklessCheckEq(counters[i], Iterations, NullLog);
 }
 
 
@@ -73,7 +73,7 @@ BOOST_AUTO_TEST_CASE(complexTest)
 
         Obj() : value(MAGIC_VALUE) {}
         ~Obj() { check(); value = 0; }
-        void check() const { locklessCheckEq(value, MAGIC_VALUE); }
+        void check() const { locklessCheckEq(value, MAGIC_VALUE, NullLog); }
     };
 
     Rcu rcu;

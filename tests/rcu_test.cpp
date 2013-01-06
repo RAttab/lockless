@@ -33,24 +33,25 @@ BOOST_AUTO_TEST_CASE(smokeTest)
 BOOST_AUTO_TEST_CASE(epochTest)
 {
     Rcu rcu;
+    auto& log = rcu.log;
 
     size_t e0 = rcu.enter();
     size_t e1 = rcu.enter();
     size_t e2 = rcu.enter();
 
-    locklessCheckNe(e0, e1);
-    locklessCheckEq(e1, e2);
+    locklessCheckNe(e0, e1, log);
+    locklessCheckEq(e1, e2, log);
     rcu.exit(e2);
 
     size_t e3 = rcu.enter();
-    locklessCheckEq(e2, e3);
+    locklessCheckEq(e2, e3, log);
 
     rcu.exit(e0);
     size_t e4 = rcu.enter();
-    locklessCheckNe(e3, e4);
+    locklessCheckNe(e3, e4, log);
 
     size_t e5 = rcu.enter();
-    locklessCheckEq(e4, e5);
+    locklessCheckEq(e4, e5, log);
 
     rcu.exit(e1);
     rcu.exit(e3);
@@ -62,6 +63,7 @@ BOOST_AUTO_TEST_CASE(epochTest)
 BOOST_AUTO_TEST_CASE(simpleDeferTest)
 {
     Rcu rcu;
+    auto& log = rcu.log;
 
     int deferred = 0;
     auto deferFn = [&] { deferred++; };
@@ -71,18 +73,18 @@ BOOST_AUTO_TEST_CASE(simpleDeferTest)
 
     size_t e1 = rcu.enter();
     rcu.defer(deferFn);
-    locklessCheckEq(rcu.enter(), e1);
+    locklessCheckEq(rcu.enter(), e1, log);
     rcu.exit(e0);
 
-    locklessCheckEq(deferred, 0);
+    locklessCheckEq(deferred, 0, log);
 
     size_t e2 = rcu.enter();
-    locklessCheckEq(deferred, 1);
+    locklessCheckEq(deferred, 1, log);
 
     rcu.exit(e1);
     rcu.exit(e1);
     size_t e3 = rcu.enter();
-    locklessCheckEq(deferred, 2);
+    locklessCheckEq(deferred, 2, log);
 
     rcu.exit(e2);
     rcu.exit(e3);
@@ -92,6 +94,7 @@ BOOST_AUTO_TEST_CASE(simpleDeferTest)
 BOOST_AUTO_TEST_CASE(complexDeferTest)
 {
     Rcu rcu;
+    auto& log = rcu.log;
 
     array<unsigned, 10> counters;
     for (unsigned& c : counters) c = 0;
@@ -100,12 +103,12 @@ BOOST_AUTO_TEST_CASE(complexDeferTest)
         for (size_t j = 0; j < i; ++j)
             rcu.defer([&, i] { counters[i]++; });
 
-        locklessCheckEq(rcu.enter(), i + 1);
+        locklessCheckEq(rcu.enter(), i + 1, log);
         if (i > 0) rcu.exit(i);
 
         for (size_t j = 0; j < counters.size(); ++j) {
-            if (i > 0 && j < i) locklessCheckEq(counters[j], j);
-            else locklessCheckEq(counters[j], 0);
+            if (i > 0 && j < i) locklessCheckEq(counters[j], j, log);
+            else locklessCheckEq(counters[j], 0, log);
         }
     }
 
@@ -125,17 +128,15 @@ BOOST_AUTO_TEST_CASE(destructorDeferTest)
         rcu.enter();
         rcu.defer(deferFn);
 
-        locklessCheckEq(counter, 0);
+        locklessCheckEq(counter, 0, rcu.log);
     }
 
-    locklessCheckEq(counter, 2);
+    locklessCheckEq(counter, 2, NullLog);
 }
 
 
 BOOST_AUTO_TEST_CASE(fuzzTest)
 {
-    GlobalLog.dump();
-
     map<size_t, size_t> expected;
     map<size_t, size_t> counters;
 
@@ -188,5 +189,5 @@ BOOST_AUTO_TEST_CASE(fuzzTest)
     }
 
     for (const auto& exp: expected)
-        locklessCheckEq(counters[exp.first], exp.second);
+        locklessCheckEq(counters[exp.first], exp.second, NullLog);
 }

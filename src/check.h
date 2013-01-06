@@ -9,6 +9,7 @@
 #define __lockless__test_checks_h__
 
 #include "debug.h"
+#include "log.h"
 
 #include <stdio.h>
 #include <array>
@@ -38,17 +39,29 @@ struct CheckContext
 /* CHECK                                                                      */
 /******************************************************************************/
 
-enum CheckBehaviour { Abort, Print };
-
-void check(bool pred, const std::string& str, const CheckContext& ctx)
+template<typename LogT>
+void check(bool pred, const std::string& str, LogT& log, const CheckContext& ctx)
 {
     if (pred) return;
 
     printf( "%s:%d: %s %s\n",
             ctx.file, ctx.line, ctx.function, str.c_str());
 
+    auto dump = log.dump();
+    std::reverse(dump.begin(), dump.end());
+    dumpToStream(dump);
+
     if (CheckAbort) abort();
+    // \todo could do an exception variant as well.
 }
+
+std::string checkStr(const char* pred)
+{
+    std::array<char, 256> buffer;
+    snprintf(buffer.data(), buffer.size(), "{ %s }", pred);
+    return std::string(buffer.data());
+}
+
 
 template<typename First, typename Second>
 std::string checkStr(
@@ -66,57 +79,59 @@ std::string checkStr(
     return std::string(buffer.data());
 }
 
+
 /******************************************************************************/
 /* CHECK PREDICATES                                                           */
 /******************************************************************************/
 
-#define locklessCheckCtx(_pred_, _ctx_)         \
-    lockless::check((_pred_), (#_pred_), _ctx_)
+#define locklessCheckCtx(_pred_, _log_, _ctx_) \
+    lockless::check((_pred_), lockless::checkStr(#_pred_), _log_, _ctx_)
 
-#define locklessCheck(_pred_) \
-    locklessCheckCtx(_pred_, locklessCtx())
+#define locklessCheck(_pred_, _log_) \
+    locklessCheckCtx(_pred_, _log_, locklessCtx())
 
-#define locklessCheckOpCtx(_op_, _first_, _second_, _ctx_)              \
+#define locklessCheckOpCtx(_op_, _first_, _second_, _log_, _ctx_)       \
     lockless::check(                                                    \
             (_first_) _op_ (_second_),                                  \
             lockless::checkStr(#_op_, #_first_, _first_, #_second_, _second_), \
-            _ctx_)
+            _log_, _ctx_)
 
-#define locklessCheckOp(_op_, _first_, _second_) \
-    locklessCheckOpCtx(_op_, _first_, _second_, locklessCtx())
-
-
-#define locklessCheckEq(_first_, _second_) \
-    locklessCheckOp(==, _first_, _second_)
-
-#define locklessCheckNe(_first_, _second_) \
-    locklessCheckOp(!=, _first_, _second_)
-
-#define locklessCheckLt(_first_, _second_) \
-    locklessCheckOp(< , _first_, _second_)
-
-#define locklessCheckLe(_first_, _second_) \
-    locklessCheckOp(<=, _first_, _second_)
-
-#define locklessCheckGt(_first_, _second_) \
-    locklessCheckOp(> , _first_, _second_)
-
-#define locklessCheckGe(_first_, _second_) \
-    locklessCheckOp(>=, _first_, _second_)
+#define locklessCheckOp(_op_, _first_, _second_, _log_) \
+    locklessCheckOpCtx(_op_, _first_, _second_, _log_, locklessCtx())
 
 
-template<typename T>
-void checkPair(const std::pair<bool, T>& r, const CheckContext& ctx)
+#define locklessCheckEq(_first_, _second_, _log_) \
+    locklessCheckOp(==, _first_, _second_, _log_)
+
+#define locklessCheckNe(_first_, _second_, _log_) \
+    locklessCheckOp(!=, _first_, _second_, _log_)
+
+#define locklessCheckLt(_first_, _second_, _log_) \
+    locklessCheckOp(< , _first_, _second_, _log_)
+
+#define locklessCheckLe(_first_, _second_, _log_) \
+    locklessCheckOp(<=, _first_, _second_, _log_)
+
+#define locklessCheckGt(_first_, _second_, _log_) \
+    locklessCheckOp(> , _first_, _second_, _log_)
+
+#define locklessCheckGe(_first_, _second_, _log_) \
+    locklessCheckOp(>=, _first_, _second_, _log_)
+
+
+template<typename T, typename LogT>
+void checkPair(const std::pair<bool, T>& r, LogT& log, const CheckContext& ctx)
 {
-    locklessCheckCtx(!r.first, ctx);
-    locklessCheckOpCtx(==, r.second, T(), ctx);
+    locklessCheckCtx(!r.first, log, ctx);
+    locklessCheckOpCtx(==, r.second, T(), log, ctx);
 }
 
-template<typename T>
-void checkPair(const std::pair<bool, T>& r, T exp, const CheckContext& ctx)
+template<typename T, typename LogT>
+void checkPair(
+        const std::pair<bool, T>& r, T exp, LogT& log, const CheckContext& ctx)
 {
-    locklessCheckCtx(r.first, ctx);
-    locklessCheckOpCtx(==, r.second, exp, ctx);
+    locklessCheckCtx(r.first, log, ctx);
+    locklessCheckOpCtx(==, r.second, exp, log, ctx);
 }
 
 

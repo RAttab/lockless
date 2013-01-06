@@ -29,7 +29,7 @@ template<typename Key, typename Value>
 void noContentionTest(const function< pair<Key, Value>() >& gen)
 {
     enum {
-        Threads = 2,
+        Threads = 8,
         Iterations = 100,
         Keys = 100,
     };
@@ -48,46 +48,41 @@ void noContentionTest(const function< pair<Key, Value>() >& gen)
     }
 
     Map<Key, Value> map;
+    auto log = map.allLogs();
 
     auto doThread = [&] (unsigned id) {
         for (size_t it = 0; it < Iterations; ++it) {
 
             for (size_t i = 0; i < Keys; ++i) {
                 auto& kv = dataset[id][i];
-                checkPair(map.find(kv.first), locklessCtx());
-                // logToStream(map.log);
+                checkPair(map.find(kv.first), log, locklessCtx());
             }
 
             for (size_t i = 0; i < Keys; ++i) {
                 auto& kv = dataset[id][i];
-                locklessCheck(map.insert(kv.first, kv.second));
-                // logToStream(map.log);
+                locklessCheck(map.insert(kv.first, kv.second), log);
             }
 
             for (size_t i = 0; i < Keys; ++i) {
                 auto& kv = dataset[id][i];
-                checkPair(map.find(kv.first), kv.second, locklessCtx());
-                // logToStream(map.log);
+                checkPair(map.find(kv.first), kv.second, log, locklessCtx());
             }
 
             for (size_t i = 0; i < Keys; ++i) {
                 auto& kv = dataset[id][i];
                 Value newValue;
-                locklessCheck(map.compareExchange(kv.first, kv.second, newValue));
-                locklessCheck(map.compareExchange(kv.first, newValue, kv.second));
-                // logToStream(map.log);
+                locklessCheck(map.compareExchange(kv.first, kv.second, newValue), log);
+                locklessCheck(map.compareExchange(kv.first, newValue, kv.second), log);
             }
 
             for (size_t i = 0; i < Keys; ++i) {
                 auto& kv = dataset[id][i];
-                checkPair(map.find(kv.first), kv.second, locklessCtx());
-                // logToStream(map.log);
+                checkPair(map.find(kv.first), kv.second, log, locklessCtx());
             }
 
             for (size_t i = 0; i < Keys; ++i) {
                 auto& kv = dataset[id][i];
-                checkPair(map.remove(kv.first), kv.second, locklessCtx());
-                // logToStream(map.log);
+                checkPair(map.remove(kv.first), kv.second, log, locklessCtx());
             }
         }
     };
@@ -96,7 +91,7 @@ void noContentionTest(const function< pair<Key, Value>() >& gen)
     test.add(doThread, Threads);
     test.run();
 
-    locklessCheckEq(map.size(), 0);
+    locklessCheckEq(map.size(), 0, log);
     cerr << "capacity=" << map.capacity() << endl;
 }
 
