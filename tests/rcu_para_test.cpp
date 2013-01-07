@@ -28,9 +28,11 @@ using namespace lockless;
 
 BOOST_AUTO_TEST_CASE(simpleTest)
 {
+    cerr << fmtTitle("simpleTest", '=') << endl;
+
     enum {
         Threads = 8,
-        Iterations = 10000,
+        Iterations = 50000,
     };
 
     array<atomic<size_t>, Threads> counters;
@@ -58,10 +60,12 @@ BOOST_AUTO_TEST_CASE(simpleTest)
 
 BOOST_AUTO_TEST_CASE(complexTest)
 {
+    cerr << fmtTitle("complexTest", '=') << endl;
+
     enum {
         ReadThreads = 2,
         WriteThreads = 2,
-        Iterations = 10000,
+        Iterations = 1000,
         Slots = 100,
     };
 

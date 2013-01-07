@@ -12,6 +12,7 @@
 
 #include "rcu.h"
 #include "check.h"
+#include "test_utils.h"
 
 #include <boost/test/unit_test.hpp>
 #include <iostream>
@@ -32,67 +33,88 @@ BOOST_AUTO_TEST_CASE(smokeTest)
 
 BOOST_AUTO_TEST_CASE(epochTest)
 {
+    cerr << fmtTitle("epochTest", '=') << endl;
+
     Rcu rcu;
     auto& log = rcu.log;
 
-    size_t e0 = rcu.enter();
-    size_t e1 = rcu.enter();
-    size_t e2 = rcu.enter();
+    for (size_t i = 0; i < 5; ++i) {
+        // cerr << fmtTitle("a, 0, 0") << endl;
+        size_t e0 = rcu.enter();
+        size_t e1 = rcu.enter();
+        locklessCheckNe(e1, e0, log);
 
-    locklessCheckNe(e0, e1, log);
-    locklessCheckEq(e1, e2, log);
-    rcu.exit(e2);
+        // cerr << fmtTitle("b, 1, 1") << endl;
+        locklessCheckEq(rcu.enter(), e1, log);
+        rcu.exit(e1);
 
-    size_t e3 = rcu.enter();
-    locklessCheckEq(e2, e3, log);
+        // cerr << fmtTitle("c, 1, 1") << endl;
+        locklessCheckEq(rcu.enter(), e1, log);
+        rcu.exit(e1);
 
-    rcu.exit(e0);
-    size_t e4 = rcu.enter();
-    locklessCheckNe(e3, e4, log);
+        // cerr << fmtTitle("d, 1, 1") << endl;
+        rcu.exit(e0);
 
-    size_t e5 = rcu.enter();
-    locklessCheckEq(e4, e5, log);
+        // cerr << fmtTitle("e, 1, 0") << endl;
+        locklessCheckEq(rcu.enter(), e1, log);
+        rcu.exit(e1);
 
-    rcu.exit(e1);
-    rcu.exit(e3);
-    rcu.exit(e4);
-    rcu.exit(e5);
+        // cerr << fmtTitle("f, 0, 1") << endl;
+        size_t e2 = rcu.enter();
+        locklessCheckNe(e2, e1, log);
+        rcu.exit(e2);
+
+        // cerr << fmtTitle("g, 0, 1") << endl;
+        rcu.exit(e1);
+
+        // cerr << fmtTitle("h, 0, 0") << endl;
+    }
 }
 
 
 BOOST_AUTO_TEST_CASE(simpleDeferTest)
 {
+    cerr << fmtTitle("simpleDeferTest", '=') << endl;
+
     Rcu rcu;
     auto& log = rcu.log;
 
-    int deferred = 0;
-    auto deferFn = [&] { deferred++; };
+    for (size_t i = 0; i < 5; ++i) {
+        int deferred = 0;
+        auto deferFn = [&] { deferred++; };
 
-    size_t e0 = rcu.enter();
-    rcu.defer(deferFn);
+        // cerr << fmtTitle("a, 0-0, 0-0") << endl;
+        rcu.defer(deferFn);
+        size_t e0 = rcu.enter();
 
-    size_t e1 = rcu.enter();
-    rcu.defer(deferFn);
-    locklessCheckEq(rcu.enter(), e1, log);
-    rcu.exit(e0);
+        // cerr << fmtTitle("b, 0-0, 1-1") << endl;
+        rcu.defer(deferFn);
+        size_t e1 = rcu.enter();
 
-    locklessCheckEq(deferred, 0, log);
+        // cerr << fmtTitle("c, 1-1, 1-1") << endl;
+        locklessCheckEq(rcu.enter(), e1, log);
+        rcu.exit(e0);
+        locklessCheckEq(deferred, 1, log);
 
-    size_t e2 = rcu.enter();
-    locklessCheckEq(deferred, 1, log);
+        // cerr << fmtTitle("d, 2-1, 0-0") << endl;
+        locklessCheckEq(rcu.enter(), e1, log);
+        locklessCheckEq(deferred, 1, log);
 
-    rcu.exit(e1);
-    rcu.exit(e1);
-    size_t e3 = rcu.enter();
-    locklessCheckEq(deferred, 2, log);
+        // cerr << fmtTitle("e, 0-0, 2-1") << endl;
+        rcu.exit(e1);
+        rcu.exit(e1);
+        rcu.exit(e1);
+        locklessCheckEq(deferred, 2, log);
 
-    rcu.exit(e2);
-    rcu.exit(e3);
+        // cerr << fmtTitle("f, 0-0, 0-0") << endl;
+    }
 }
 
 
 BOOST_AUTO_TEST_CASE(complexDeferTest)
 {
+    cerr << fmtTitle("complexDeferTest", '=') << endl;
+
     Rcu rcu;
     auto& log = rcu.log;
 
@@ -103,21 +125,23 @@ BOOST_AUTO_TEST_CASE(complexDeferTest)
         for (size_t j = 0; j < i; ++j)
             rcu.defer([&, i] { counters[i]++; });
 
-        locklessCheckEq(rcu.enter(), i + 1, log);
-        if (i > 0) rcu.exit(i);
+        if (i > 0) rcu.exit(i - 1);
+        locklessCheckEq(rcu.enter(), i, log);
 
         for (size_t j = 0; j < counters.size(); ++j) {
             if (i > 0 && j < i) locklessCheckEq(counters[j], j, log);
-            else locklessCheckEq(counters[j], 0, log);
+            else locklessCheckEq(counters[j], 0U, log);
         }
     }
 
-    rcu.exit(counters.size());
+    rcu.exit(counters.size() - 1);
 }
 
 
 BOOST_AUTO_TEST_CASE(destructorDeferTest)
 {
+    cerr << fmtTitle("destructorDeferTest", '=') << endl;
+
     unsigned counter = 0;
     auto deferFn = [&] { counter++; };
 
@@ -128,15 +152,17 @@ BOOST_AUTO_TEST_CASE(destructorDeferTest)
         rcu.enter();
         rcu.defer(deferFn);
 
-        locklessCheckEq(counter, 0, rcu.log);
+        locklessCheckEq(counter, 0U, rcu.log);
     }
 
-    locklessCheckEq(counter, 2, NullLog);
+    locklessCheckEq(counter, 2U, NullLog);
 }
 
 
 BOOST_AUTO_TEST_CASE(fuzzTest)
 {
+    cerr << fmtTitle("fuzzTest", '=') << endl;
+
     map<size_t, size_t> expected;
     map<size_t, size_t> counters;
 
@@ -152,21 +178,17 @@ BOOST_AUTO_TEST_CASE(fuzzTest)
         for (size_t i = 0; i < 2; ++i)
             epochs[i] = inEpochs[i] = 0;
 
-        for (size_t i = 0; i < 1000; ++i) {
+        for (size_t i = 0; i < 10000; ++i) {
             unsigned action = rnd(engine);
 
             if (action == 0) {
                 size_t e = rcu.enter();
 
-                // If there's an empty slot, take it.
-                if (!inEpochs[0]) epochs[0] = e;
-                else if (!inEpochs[1]) epochs[1] = e;
-
-                // Increment that slot's counter.
                 if (epochs[0] == e) inEpochs[0]++;
                 else if (epochs[1] == e) inEpochs[1]++;
 
-                else assert(false);
+                else if (!inEpochs[0]) { epochs[0] = e; inEpochs[0]++; }
+                else if (!inEpochs[1]) { epochs[1] = e; inEpochs[1]++; }
             }
 
             else if (action == 1) {
@@ -174,6 +196,7 @@ BOOST_AUTO_TEST_CASE(fuzzTest)
                 size_t j = i % 2;
                 if (!inEpochs[j]) j = (j + 1) % 2;
                 if (!inEpochs[j]) continue;
+
 
                 rcu.exit(epochs[j]);
                 inEpochs[j]--;
