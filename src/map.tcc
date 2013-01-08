@@ -55,6 +55,8 @@
     but chances are that it will rarely go beyond 2-3 chained tables.
  */
 
+#include "check.h"
+
 namespace lockless {
 
 /******************************************************************************/
@@ -268,8 +270,6 @@ moveBucket(Table* dest, Bucket& src)
     // we don't need any RMW ops here.
     src.keyAtom.store(setTombstone<MKey>(keyAtom));
     src.valueAtom.store(setTombstone<MValue>(valueAtom));
-
-    return;
 }
 
 
@@ -401,7 +401,7 @@ insertImpl(
                 return false;
             }
 
-            assert(!dbg_once);
+            locklessCheck(!dbg_once, log);
             dbg_once = true;
 
             if (bucket.valueAtom.compare_exchange_strong(
@@ -418,6 +418,7 @@ insertImpl(
 
     // The key is definetively not in this table, try the next.
     doResize(t, tombstones);
+    locklessCheck(t->next.load(), log);
     return insertImpl(t->next.load(), hash, key, keyAtom, valueAtom, dealloc);
 }
 
@@ -508,6 +509,7 @@ findImpl(Table* t, const size_t hash, const Key& key)
 
     // The key is definetively not in this table, try the next.
     doResize(t, tombstones);
+    locklessCheck(t->next.load(), log);
     return findImpl(t->next.load(), hash, key);
 }
 
@@ -610,6 +612,7 @@ compareExchangeImpl(
 
     // The key is definetively not in this table, try the next.
     doResize(t, tombstones);
+    locklessCheck(t->next.load(), log);
     return compareExchangeImpl(t->next.load(), hash, key, expected, desired);
 }
 
@@ -713,6 +716,7 @@ removeImpl(Table* t, const size_t hash, const Key& key)
 
     // The key is definetively not in this table, try the next.
     doResize(t, tombstones);
+    locklessCheck(t->next.load(), log);
     return removeImpl(t->next.load(), hash, key);
 }
 
@@ -727,8 +731,8 @@ doResize(Table* t, size_t tombstones)
     if (t->isResizing()) return;
 
     if (tombstones >= details::TombstoneThreshold)
-        resizeImpl(t->capacity, true);
-    else resizeImpl(t->capacity * 2, false);
+        resizeImpl(t, t->capacity, true);
+    else resizeImpl(t, t->capacity * 2, false);
 }
 
 
@@ -737,15 +741,15 @@ template<
     typename Key, typename Value, typename Hash, typename MKey, typename MValue>
 void
 Map<Key, Value, Hash, MKey, MValue>::
-resizeImpl(size_t newCapacity, bool force)
+resizeImpl(Table* start, size_t newCapacity, bool force)
 {
+    log.log(LogMap, "rsz-0", "newCapacity=%ld, force=%d", newCapacity, force);
+
     using namespace details;
 
     std::unique_ptr<Table, MallocDeleter> safeNewTable;
-
-    std::atomic<Table*>* prev = &table;
-    Table* prevTable = nullptr;
-
+    std::atomic<Table*>* prev = start ? &start->next : &table;
+    Table* prevTable = start ? start : nullptr;
     bool done = false;
 
     // 1. Insert the new table in the chain.
@@ -753,8 +757,10 @@ resizeImpl(size_t newCapacity, bool force)
         Table* curTable = prev->load();
 
         log.log(LogMap, "rsz-1",
-                "prev=%p, prevTable=%p, curTable=%p, curCapacity=%ld",
-                prev, prevTable, curTable, curTable ? curTable->capacity : 0);
+                "prev=%p, prevTable=%p, curTable=%p, curCapacity=%ld, next=%p",
+                prev, prevTable, curTable,
+                curTable ? curTable->capacity : 0,
+                curTable ? curTable->next.load() : 0);
 
         if (curTable) {
             if (newCapacity < curTable->capacity) return;
@@ -772,7 +778,7 @@ resizeImpl(size_t newCapacity, bool force)
         if (!safeNewTable)
             safeNewTable.reset(Table::alloc(newCapacity));
 
-        assert(!curTable);
+        locklessCheck(!curTable, log);
         done = prev->compare_exchange_weak(curTable, safeNewTable.get());
     } while(!done);
 
@@ -805,7 +811,7 @@ resizeImpl(size_t newCapacity, bool force)
                 "prev=%p, prevTable=%p, curTable=%p, target=%p",
                 prev, prevTable, curTable, toRemove);
 
-        assert(curTable);
+        locklessCheck(curTable, log);
 
         if (curTable != toRemove) {
             prevTable = curTable;

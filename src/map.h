@@ -33,10 +33,8 @@ template<
     typename Hash = std::hash<Key>,
     typename MKey = MagicValue< typename details::Atomizer<Key>::type >,
     typename MValue = MagicValue< typename details::Atomizer<Value>::type > >
-struct Map
+class Map
 {
-
-private:
 
     typedef details::Atomizer<Key> KeyAtomizer;
     typedef typename KeyAtomizer::type KeyAtom;
@@ -91,7 +89,7 @@ public:
         log.log(LogMap, "resize", "capacity=%ld", capacity);
 
         RcuGuard guard(rcu);
-        resizeImpl(adjustCapacity(capacity));
+        resizeImpl(table.load(), adjustCapacity(capacity));
     }
 
     /* Blah
@@ -143,7 +141,7 @@ public:
      */
     bool compareExchange(const Key& key, Value& expected, const Value& desired)
     {
-        log.log(LogMap, "xchg", "key=%s, exp=%s, value=%s",
+        log.log(LogMap, "cmp-xchg", "key=%s, exp=%s, value=%s",
                 std::to_string(key).c_str(),
                 std::to_string(expected).c_str(),
                 std::to_string(desired).c_str());
@@ -262,7 +260,7 @@ private:
     void moveBucket(Table* dest, Bucket& src);
 
     void doResize(Table* t, size_t tombstones);
-    void resizeImpl(size_t newCapacity, bool force = false);
+    void resizeImpl(Table* start, size_t newCapacity, bool force = false);
 
     std::pair<bool, Value> findImpl(
             Table* t, const size_t hash, const Key& key);

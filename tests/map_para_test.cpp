@@ -91,7 +91,7 @@ void noContentionTest(const function< pair<Key, Value>() >& gen)
     test.add(doThread, Threads);
     test.run();
 
-    locklessCheckEq(map.size(), 0, log);
+    locklessCheckEq(map.size(), 0ULL, log);
     cerr << "capacity=" << map.capacity() << endl;
 }
 

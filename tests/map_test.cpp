@@ -50,7 +50,7 @@ BOOST_AUTO_TEST_CASE(basicOpTest)
     Map<size_t, size_t> map;
     auto& log = map.log;
 
-    locklessCheckEq(map.size(), 0, log);
+    locklessCheckEq(map.size(), 0ULL, log);
 
     cerr << fmtTitle("fail find", '=') << endl;
 
