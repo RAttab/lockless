@@ -44,8 +44,9 @@ void check(bool pred, const std::string& str, LogT& log, const CheckContext& ctx
 {
     if (pred) return;
 
-    printf( "%s:%d: %s %s\n",
-            ctx.file, ctx.line, ctx.function, str.c_str());
+    printf( "%s:%d: %s{%ld} %s\n",
+            ctx.file, ctx.line, ctx.function,
+            details::threadId(), str.c_str());
 
     auto dump = log.dump();
     std::reverse(dump.begin(), dump.end());
