@@ -13,6 +13,8 @@
 
 #include <stdio.h>
 #include <array>
+#include <sstream>
+#include <iostream>
 
 namespace lockless {
 
@@ -50,7 +52,10 @@ void check(bool pred, const std::string& str, LogT& log, const CheckContext& ctx
 
     auto dump = log.dump();
     std::reverse(dump.begin(), dump.end());
-    dumpToStream(dump);
+
+    std::stringstream ss;
+    dumpToStream(dump, ss);
+    std::cerr << ss.str();
 
     if (CheckAbort) abort();
     // \todo could do an exception variant as well.
