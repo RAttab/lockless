@@ -25,6 +25,7 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
+
 #------------------------------------------------------------------------------#
 # TCMALLOC
 #------------------------------------------------------------------------------#
@@ -49,7 +50,7 @@ endif()
 
 install(
     FILES
-    src/utils.h src/log.h src/check.h
+    src/debug.h src/utils.h src/log.h src/check.h
     src/clock.h src/magic.h src/atomizer.h
     src/rcu.h
     src/map.h map.tcc
@@ -59,6 +60,7 @@ install(
 
 add_library(lockless_log SHARED src/log.cpp)
 install(TARGETS lockless_log DESTINATION lib)
+
 
 #------------------------------------------------------------------------------#
 # TESTS
