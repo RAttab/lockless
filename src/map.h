@@ -257,6 +257,7 @@ private:
     // map.tcc functions.
 
     bool doMoveBucket(Table* t, Bucket& bucket);
+    void lockBucket(Bucket& src);
     void moveBucket(Table* dest, Bucket& src);
 
     void doResize(Table* t, size_t tombstones);

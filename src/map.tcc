@@ -168,7 +168,7 @@ doMoveBucket(Table* t, Bucket& bucket)
 }
 
 
-/* This op works in 3 phases to work around these 2 problems:
+/* The point of lockBucket is to avoid these 2 problems:
 
    1. An inserted KV pair must be in at least one table at all time.
    2. An inserted KV pair must only be modifiable in one table.
@@ -204,11 +204,9 @@ template<
     typename Key, typename Value, typename Hash, typename MKey, typename MValue>
 void
 Map<Key, Value, Hash, MKey, MValue>::
-moveBucket(Table* dest, Bucket& src)
+lockBucket(Bucket& src)
 {
     using namespace details;
-
-    // 1. Read the KV pair in src and prepare them for moving.
 
     KeyAtom keyAtom;
     KeyAtom oldKeyAtom = src.keyAtom.load();
@@ -235,47 +233,179 @@ moveBucket(Table* dest, Bucket& src)
             break;
         }
 
+        // Ensures that if either are tombstone then both will be.
+        if (isTombstone<MKey>(keyAtom)) {
+            src.valueAtom.store(setTombstone<MValue>(oldValueAtom));
+            return;
+        }
+
         if (isEmpty<MValue>(oldValueAtom))
-                valueAtom = setTombstone<MValue>(oldValueAtom);
+            valueAtom = setTombstone<MValue>(oldValueAtom);
         else valueAtom = setMoving<MValue>(oldValueAtom);
 
     } while (!src.valueAtom.compare_exchange_weak(oldValueAtom, valueAtom));
 
+    // Ensures that if either are tombstone then both will be.
+    if (isTombstone<MValue>(valueAtom))
+        src.keyAtom.store(setTombstone<MKey>(keyAtom));
+}
 
-    // Move is already done, go somewhere else.
-    if (isTombstone<MKey>(keyAtom) && isTombstone<MValue>(valueAtom))
+
+/* This op is pretty tricky and I concentrated most of the doc in the function
+   itself around the complicated parts of the algorithm. Also checkout the doc
+   for lockBucket which describes 2 key ideas behind the algorithm: the isMoving
+   state and the probing window.
+
+   There's one key idea I should reiterate though. If we're moving a key then no
+   operations on that key (insert, find, compareExchange, remove) can take place
+   until that key is moved. See the lockBucket documentation for more details on
+   why.
+
+   \todo Should probably merge the probing portion of the lockBucket doc to this
+         doc where it would make more sense.
+ */
+template<
+    typename Key, typename Value, typename Hash, typename MKey, typename MValue>
+void
+Map<Key, Value, Hash, MKey, MValue>::
+moveBucket(Table* dest, Bucket& src)
+{
+    using namespace details;
+
+    /* Ensures that any ops that affect this key will end up waiting until the
+       move is finished. In the meantime, the thread will help out with the
+       move. And by help out, I really mean: get in the way and generally make
+       things more complicated. Such is the cost of having a lockfree algo.
+     */
+    lockBucket(src);
+
+
+    KeyAtom srcKeyAtom = src.keyAtom.load();
+    size_t hash = hashFn(KeyAtomizer::load(clearMarks<MKey>(srcKeyAtom)));
+
+    // If it was tombstone then someone else finished the move. bail.
+    if (isTombstone<MKey>(srcKeyAtom)) return;
+    locklessCheck(isMoving<MKey>(srcKeyAtom), log);
+    srcKeyAtom = setValue<MKey>(srcKeyAtom);
+
+
+    /* Start Probing for a bucket to move to.
+
+       Note that even though we're in a move, we may need to help out with
+       another resize. Recursivity is fun!
+    */
+
+    size_t tombstones = 0;
+    for (size_t i = 0; i < ProbeWindow; ++i) {
+        size_t probeBucket = this->bucket(hash, i, dest->capacity);
+        Bucket& bucket = dest->buckets[probeBucket];
+        if (doMoveBucket(dest, bucket)) continue;
+
+
+        // 1. Lock a bucket for our move by setting the key.
+
+        KeyAtom destKeyAtom = bucket.keyAtom.load();
+
+        log.log(LogMap, "mov-1", "bucket=%ld, srcKey=%s, destKey=%s",
+                probeBucket,
+                fmtAtom<MKey>(srcKeyAtom).c_str(),
+                fmtAtom<MKey>(destKeyAtom).c_str());
+
+        if (isTombstone<MKey>(destKeyAtom)) {
+            tombstones++;
+            continue;
+        }
+
+        // Ongoing move, switch to move mode
+        if (isMoving<MKey>(destKeyAtom)) {
+            --i;
+            continue;
+        }
+
+        if (!isEmpty<MKey>(destKeyAtom)) {
+            /* We can just compare the atoms because srcKeyAtom points to the
+               unique instance of that key in the table and the only other
+               instance of that key can only come from the atom having been
+               moved to this bucket by another thread.
+             */
+            if (srcKeyAtom != destKeyAtom) continue;
+        }
+        else if (!bucket.keyAtom.compare_exchange_weak(destKeyAtom, srcKeyAtom)) {
+            // Someone beat us; recheck the bucket to see if our key was involved.
+            --i;
+            continue;
+        }
+
+
+        // 2. Complete the move by setting the value.
+
+        ValueAtom srcValueAtom = src.valueAtom.load();
+
+        /* If it was tombstoned then someone else finished the move. bail.
+
+           Fun fact: It's possible that bucket is half built and will remain
+           like that after we bail. Turns out that this is perfectly acceptable
+           because by definition this bucket is after the correctly moved bucket
+           and since it's half-built, it doesn't officially exit.
+
+           We could tombstone it but leaving like it is effectively equivalent.
+           Better still, if our key gets removed and inserted again then this
+           bucket will be ready for it. Otherwise it'll just get cleaned up in
+           the next resize. No harm done.
+
+           \todo Actually, I'm not sure if this scenario is even possible.
+         */
+        if (isTombstone<MValue>(srcValueAtom)) return;
+        locklessCheck(isMoving<MValue>(srcValueAtom), log);
+        srcValueAtom = setValue<MValue>(srcValueAtom);
+
+
+        ValueAtom destValueAtom = bucket.valueAtom.load();
+
+        if (isEmpty<MValue>(destValueAtom))
+            bucket.valueAtom.compare_exchange_strong(destValueAtom, srcValueAtom);
+
+        locklessCheck(!isEmpty<MValue>(destValueAtom), log);
+
+        /* If it's a value then at least one thread succeeded in the CAS. Before
+           we can continue, we first need to broadcast the fact that the move is
+           completed.
+
+           Note that if isMoving is true then the value was still set by
+           somebody which is all we care about.
+         */
+        if (!isTombstone<MValue>(destValueAtom)) {
+            src.keyAtom.store(setTombstone<MKey>(srcKeyAtom));
+            src.valueAtom.store(setTombstone<MValue>(srcValueAtom));
+            return;
+        }
+
+
+        // 3. Uh. Oh. The move failed and we don't know why!
+
+        /* There's 2 reasons why the move may have found a tombstone in value:
+
+           - Another thread completed the move and the key was then removed.
+           - A resize tombstoned our half moved key.
+
+           The second scenario is the simplest. Since the move is still ongoing
+           then retrying is the correct action to take.
+
+           The first scenario is trickier; we know that the src bucket has been
+           tombstoned because the dest bucket was tombstoned. The only way for
+           the key to have been removed is for one thread to have finished the
+           move, tombstoned src's bucket and then went on to remove dest. In any
+           case, the first thing the retry will do is read src's bucket and
+           bail when it finds a tombstone.
+         */
+        moveBucket(dest, src);
         return;
-
-
-    // 2. Move the value to the dest table.
-    if (isMoving<MKey>(keyAtom) && isMoving<MValue>(valueAtom)) {
-
-        log.log(LogMap, "mov-1",
-                "dest=%p, oldKey=%c, key=%s, oldValue=%c, value=%s",
-                dest,
-                fmtState<MKey>(oldKeyAtom), fmtAtom<MKey>(keyAtom).c_str(),
-                fmtState<MValue>(oldValueAtom), fmtAtom<MValue>(valueAtom).c_str());
-
-        keyAtom = clearMarks<MKey>(keyAtom);
-        valueAtom = clearMarks<MValue>(valueAtom);
-
-        Key key = KeyAtomizer::load(keyAtom);
-        size_t hash = hashFn(key);
-
-        // Regardless of the return value of this function, the KV will have
-        // been moved to a new table. Either because we did it or because
-        // another thread beat us to it. In either cases, the KV was moved so
-        // we're happy.
-        insertImpl(dest, hash, key, keyAtom, valueAtom, DeallocNone);
     }
 
-
-    // 3. Kill the values in the src table.
-
-    // The only possible transition out of the moving state is to tombstone so
-    // we don't need any RMW ops here.
-    src.keyAtom.store(setTombstone<MKey>(keyAtom));
-    src.valueAtom.store(setTombstone<MValue>(valueAtom));
+    // Nowhere to put the key; make some room and try again.
+    doResize(dest, tombstones);
+    locklessCheck(dest->next.load(), log);
+    moveBucket(dest->next.load(), src);
 }
 
 
