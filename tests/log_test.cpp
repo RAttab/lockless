@@ -25,7 +25,7 @@ BOOST_AUTO_TEST_CASE(basicTest)
     log.log(LogMap, "T1", "number=%d", 42);
 
     auto d0 = log.dump();
-    locklessCheckEq(d0.size(), 2, NullLog);
+    locklessCheckEq(d0.size(), 2ULL, NullLog);
     locklessCheckEq(d0[0].type, LogRcu, NullLog);
     locklessCheckEq(d0[0].title, "T0", NullLog);
     locklessCheckEq(d0[1].type, LogMap, NullLog);
@@ -35,7 +35,7 @@ BOOST_AUTO_TEST_CASE(basicTest)
     log.log(LogQueue, "T2", "blah");
 
     auto d1 = log.dump();
-    locklessCheckEq(d1.size(), 1, NullLog);
+    locklessCheckEq(d1.size(), 1ULL, NullLog);
     locklessCheckEq(d1[0].type, LogQueue, NullLog);
     locklessCheckEq(d1[0].title, "T2", NullLog);
 }
@@ -64,7 +64,7 @@ BOOST_AUTO_TEST_CASE(mergeTest)
 
     setup();
     auto d0 = LogAggregator(l0, l1, l2).dump();
-    locklessCheckEq(d0.size(), 9, NullLog);
+    locklessCheckEq(d0.size(), 9ULL, NullLog);
     locklessCheck(is_sorted(d0.begin(), d0.end()), NullLog);
 
     auto eqFn = [] (const LogEntry& lhs, const LogEntry& rhs) {
