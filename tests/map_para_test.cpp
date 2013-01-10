@@ -34,7 +34,7 @@ void noContentionTest(const function< pair<Key, Value>() >& gen)
         Keys = 100,
     };
 
-    fmtTitle("para", '=');
+    cerr << fmtTitle("para", '=') << endl;
 
     std::set<Key> keys;
     array< array< pair<Key, Value>, Keys>, Threads> dataset;
@@ -70,7 +70,7 @@ void noContentionTest(const function< pair<Key, Value>() >& gen)
 
             for (size_t i = 0; i < Keys; ++i) {
                 auto& kv = dataset[id][i];
-                Value newValue(0);
+                Value newValue;
                 locklessCheck(map.compareExchange(kv.first, kv.second, newValue), log);
                 locklessCheck(map.compareExchange(kv.first, newValue, kv.second), log);
             }
