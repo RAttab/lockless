@@ -281,12 +281,13 @@ moveBucket(Table* dest, Bucket& src)
 
 
     KeyAtom srcKeyAtom = src.keyAtom.load();
-    size_t hash = hashFn(KeyAtomizer::load(clearMarks<MKey>(srcKeyAtom)));
 
     // If it was tombstone then someone else finished the move. bail.
     if (isTombstone<MKey>(srcKeyAtom)) return;
     locklessCheck(isMoving<MKey>(srcKeyAtom), log);
+
     srcKeyAtom = setValue<MKey>(srcKeyAtom);
+    size_t hash = hashFn(KeyAtomizer::load(clearMarks<MKey>(srcKeyAtom)));
 
 
     /* Start Probing for a bucket to move to.
@@ -363,7 +364,8 @@ moveBucket(Table* dest, Bucket& src)
         ValueAtom destValueAtom = bucket.valueAtom.load();
 
         if (isEmpty<MValue>(destValueAtom))
-            bucket.valueAtom.compare_exchange_strong(destValueAtom, srcValueAtom);
+            if (bucket.valueAtom.compare_exchange_strong(destValueAtom, srcValueAtom))
+                destValueAtom = srcValueAtom;
 
         locklessCheck(!isEmpty<MValue>(destValueAtom), log);
 
