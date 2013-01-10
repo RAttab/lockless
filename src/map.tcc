@@ -250,6 +250,12 @@ moveBucket(Table* dest, Bucket& src)
     // 2. Move the value to the dest table.
     if (isMoving<MKey>(keyAtom) && isMoving<MValue>(valueAtom)) {
 
+        log.log(LogMap, "mov-1",
+                "dest=%p, oldKey=%c, key=%s, oldValue=%c, value=%s",
+                dest,
+                fmtState<MKey>(oldKeyAtom), fmtAtom<MKey>(keyAtom).c_str(),
+                fmtState<MValue>(oldValueAtom), fmtAtom<MValue>(valueAtom).c_str());
+
         keyAtom = clearMarks<MKey>(keyAtom);
         valueAtom = clearMarks<MValue>(valueAtom);
 
@@ -573,7 +579,7 @@ compareExchangeImpl(
         while (true) {
 
             log.log(LogMap, "xch-2",
-                    "bucket=%ld, value=%s, expected= %s, desired=%s",
+                    "bucket=%ld, value=%s, expected=%s, desired=%s",
                     probeBucket,
                     fmtAtom<MValue>(valueAtom).c_str(),
                     std::to_string(expected).c_str(),

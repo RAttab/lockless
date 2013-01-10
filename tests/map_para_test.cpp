@@ -37,7 +37,7 @@ void noContentionTest(const function< pair<Key, Value>() >& gen)
     fmtTitle("para", '=');
 
     std::set<Key> keys;
-    array< array< pair<Key, Value>, Keys >, Threads> dataset;
+    array< array< pair<Key, Value>, Keys>, Threads> dataset;
 
     for (size_t th = 0; th < dataset.size(); ++th) {
         for (size_t i = 0; i < Keys; ++i) {
@@ -50,7 +50,7 @@ void noContentionTest(const function< pair<Key, Value>() >& gen)
     Map<Key, Value> map;
     auto log = map.allLogs();
 
-    auto doThread = [&] (unsigned id) {
+    auto doThread = [&] (const unsigned id) {
         for (size_t it = 0; it < Iterations; ++it) {
 
             for (size_t i = 0; i < Keys; ++i) {
@@ -70,7 +70,7 @@ void noContentionTest(const function< pair<Key, Value>() >& gen)
 
             for (size_t i = 0; i < Keys; ++i) {
                 auto& kv = dataset[id][i];
-                Value newValue;
+                Value newValue(0);
                 locklessCheck(map.compareExchange(kv.first, kv.second, newValue), log);
                 locklessCheck(map.compareExchange(kv.first, newValue, kv.second), log);
             }
