@@ -37,7 +37,7 @@ struct MallocDeleter
 
 namespace std {
 
-std::string to_string(const std::string& str) { return str; }
+inline std::string to_string(const std::string& str) { return str; }
 
 template<typename First, typename Second>
 std::string to_string(const std::pair<First, Second>& p)

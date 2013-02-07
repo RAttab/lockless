@@ -145,6 +145,37 @@ void checkPair(
 }
 
 
+/******************************************************************************/
+/* SIGNALS                                                                    */
+/******************************************************************************/
+
+namespace details {
+
+void installSignalHandler(const std::function<void()>& callback);
+void removeSignalHandler();
+
+} // namespace details
+
+struct SignalCheck
+{
+    template<typename LogT>
+    SignalCheck(LogT& log)
+    {
+        this->log.add(log);
+
+        details::installSignalHandler(
+                bind(logToStream<LogT>, std::ref(log), std::ref(std::cerr)));
+    }
+
+    ~SignalCheck()
+    {
+        details::removeSignalHandler();
+    }
+
+private:
+    LogAggregator log;
+};
+
 } // lockless
 
 #endif // __lockless__test_checks_h__
