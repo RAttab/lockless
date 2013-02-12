@@ -63,7 +63,7 @@ public:
        Exception Safety: Only throws on calls to new.
      */
     Map(size_t initialSize = 0, const Hash& hashFn = Hash()) :
-        hashFn(hashFn), elem(0), table(0)
+        hashFn(hashFn), elem(0), table(nullptr)
     {
         resize(adjustCapacity(initialSize));
     }
@@ -75,7 +75,12 @@ public:
        Exception Safety: Does not throw.
      */
     size_t size() const { return elem.load(); }
-    size_t capacity() const { return newestTable()->capacity; }
+
+    size_t capacity() const
+    {
+        RcuGuard guard(rcu);
+        return newestTable()->capacity;
+    }
 
     /* Blah
 
@@ -197,6 +202,42 @@ private:
 
         bool isResizing() const { return next.load(); }
 
+        static constexpr uintptr_t mask() { return uintptr_t(1); }
+
+        static bool isMarked(Table* t)
+        {
+            return uintptr_t(t) & mask();
+        }
+
+        static Table* clearMark(Table* t)
+        {
+            return reinterpret_cast<Table*>(uintptr_t(t) & ~mask());
+        }
+
+        bool isMarked() const { return isMarked(next.load()); }
+
+        Table* mark()
+        {
+            Table* oldTable = next.load();
+            Table* newTable;
+
+            do {
+                newTable =
+                    reinterpret_cast<Table*>(uintptr_t(oldTable) | mask());
+            } while(!next.compare_exchange_weak(oldTable, newTable));
+
+            return oldTable;
+        }
+
+        Table* nextTable()
+        {
+            Table* nextTable = clearMark(next.load());
+            if (!nextTable->isMarked()) return nextTable;
+
+            // A marked table has been fully moved so we can just ignore them.
+            return nextTable->nextTable();
+        }
+
         static Table* alloc(size_t capacity)
         {
             size_t size = sizeof(capacity) + sizeof(next);
@@ -234,6 +275,10 @@ private:
 
     size_t bucket(size_t hash, size_t i, size_t capacity)
     {
+        // one and only one bit should be set in capacity.
+        locklessCheck(capacity, log);
+        locklessCheck(!((capacity - 1) & capacity), log);
+
         // Capacity is an exponent of 2 so this will work just fine.
         return (hash + i) & (capacity - 1);
     }
@@ -263,8 +308,8 @@ private:
     void doResize(Table* t, size_t tombstones);
     void resizeImpl(Table* start, size_t newCapacity, bool force = false);
 
-    std::pair<bool, Value> findImpl(
-            Table* t, const size_t hash, const Key& key);
+    std::pair<bool, Value>
+    findImpl(Table* t, const size_t hash, const Key& key);
 
     bool insertImpl(
             Table* t,
@@ -281,12 +326,12 @@ private:
             Value& expected,
             ValueAtom desired);
 
-    std::pair<bool, Value> removeImpl(
-            Table* t, const size_t hash, const Key& key);
+    std::pair<bool, Value>
+    removeImpl(Table* t, const size_t hash, const Key& key);
 
 
     Hash hashFn;
-    Rcu rcu;
+    mutable Rcu rcu;
     std::atomic<size_t> elem;
     std::atomic<Table*> table;
 

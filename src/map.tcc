@@ -32,7 +32,7 @@
        isMoving *----------> * isTombstone
                      Move
 
-    Important thing to not is that there are no transitions out of tombstone.
+    Important thing to note is that there are no transitions out of tombstone.
     This ensures that we can support the remove operation without having to
     rehash the values that are in our probe window. The downside is that we
     eventually have to clean up the tombstoned values. This is accomplished by
@@ -163,7 +163,10 @@ Map<Key, Value, Hash, MKey, MValue>::
 doMoveBucket(Table* t, Bucket& bucket)
 {
     if (!t->isResizing()) return false;
-    moveBucket(t->next.load(), bucket);
+
+    log.log(LogMap, "move-0", "table=%p, next=%p", t, t->nextTable());
+
+    moveBucket(t->nextTable(), bucket);
     return true;
 }
 
@@ -204,12 +207,12 @@ template<
     typename Key, typename Value, typename Hash, typename MKey, typename MValue>
 void
 Map<Key, Value, Hash, MKey, MValue>::
-lockBucket(Bucket& src)
+lockBucket(Bucket& bucket)
 {
     using namespace details;
 
     KeyAtom keyAtom;
-    KeyAtom oldKeyAtom = src.keyAtom.load();
+    KeyAtom oldKeyAtom = bucket.keyAtom.load();
     do {
         if (isTombstone<MKey>(oldKeyAtom)) return;
         if (isMoving<MKey>(oldKeyAtom)) {
@@ -221,11 +224,18 @@ lockBucket(Bucket& src)
             keyAtom = setTombstone<MKey>(oldKeyAtom);
         else keyAtom = setMoving<MKey>(oldKeyAtom);
 
-    } while(!src.keyAtom.compare_exchange_weak(oldKeyAtom, keyAtom));
+    } while(!bucket.keyAtom.compare_exchange_weak(oldKeyAtom, keyAtom));
 
 
     ValueAtom valueAtom;
-    ValueAtom oldValueAtom = src.valueAtom.load();
+    ValueAtom oldValueAtom = bucket.valueAtom.load();
+
+    // Ensures that if either are tombstone then both will be.
+    if (isTombstone<MKey>(keyAtom)) {
+        bucket.valueAtom.store(setTombstone<MValue>(oldValueAtom));
+        return;
+    }
+
     do {
         if (isTombstone<MValue>(oldValueAtom)) return;
         if (isMoving<MValue>(oldValueAtom)) {
@@ -233,21 +243,16 @@ lockBucket(Bucket& src)
             break;
         }
 
-        // Ensures that if either are tombstone then both will be.
-        if (isTombstone<MKey>(keyAtom)) {
-            src.valueAtom.store(setTombstone<MValue>(oldValueAtom));
-            return;
-        }
-
         if (isEmpty<MValue>(oldValueAtom))
             valueAtom = setTombstone<MValue>(oldValueAtom);
         else valueAtom = setMoving<MValue>(oldValueAtom);
 
-    } while (!src.valueAtom.compare_exchange_weak(oldValueAtom, valueAtom));
+    } while (!bucket.valueAtom.compare_exchange_weak(oldValueAtom, valueAtom));
 
     // Ensures that if either are tombstone then both will be.
-    if (isTombstone<MValue>(valueAtom))
-        src.keyAtom.store(setTombstone<MKey>(keyAtom));
+    if (isTombstone<MValue>(valueAtom)) {
+        bucket.keyAtom.store(setTombstone<MKey>(keyAtom));
+    }
 }
 
 
@@ -406,8 +411,8 @@ moveBucket(Table* dest, Bucket& src)
 
     // Nowhere to put the key; make some room and try again.
     doResize(dest, tombstones);
-    locklessCheck(dest->next.load(), log);
-    moveBucket(dest->next.load(), src);
+    locklessCheck(dest->nextTable(), log);
+    moveBucket(dest->nextTable(), src);
 }
 
 
@@ -456,6 +461,8 @@ insertImpl(
         ValueAtom valueAtom,
         DeallocAtom dealloc)
 {
+    log.log(LogMap, "insert-0", "table=%p", t);
+
     using namespace details;
 
     size_t tombstones = 0;
@@ -465,6 +472,9 @@ insertImpl(
 
     for (size_t i = 0; i < ProbeWindow; ++i) {
         size_t probeBucket = this->bucket(hash, i, t->capacity);
+        log.log(LogMap, "probe",
+                "table=%p, capacity=%ld",
+                t, hash, i, t->capacity, probeBucket);
         Bucket& bucket = t->buckets[probeBucket];
         if (doMoveBucket(t, bucket)) continue;
 
@@ -488,7 +498,7 @@ insertImpl(
             continue;
         }
 
-        if (!isEmpty<MKey>(bucketKeyAtom)) {
+        if (isValue<MKey>(bucketKeyAtom)) {
             if (key != KeyAtomizer::load(clearMarks<MKey>(bucketKeyAtom)))
                 continue;
         }
@@ -534,7 +544,9 @@ insertImpl(
             }
 
             // Another insert beat us to it.
-            if (!isEmpty<MValue>(bucketValueAtom)) {
+            if (isValue<MValue>(bucketValueAtom)) {
+                keyAtom = clearMarks<MKey>(keyAtom);
+                valueAtom = clearMarks<MValue>(valueAtom);
                 deallocAtomNow(dealloc, keyAtom, valueAtom);
                 return false;
             }
@@ -542,10 +554,10 @@ insertImpl(
             locklessCheck(!dbg_once, log);
             dbg_once = true;
 
-            if (bucket.valueAtom.compare_exchange_strong(
-                            bucketValueAtom, valueAtom))
-            {
+            if (bucket.valueAtom.compare_exchange_strong(bucketValueAtom, valueAtom)) {
                 DeallocAtom newFlag = clearDeallocFlag(dealloc, DeallocValue);
+                keyAtom = clearMarks<MKey>(keyAtom);
+                valueAtom = clearMarks<MValue>(valueAtom);
                 deallocAtomNow(newFlag, keyAtom, valueAtom);
                 return true;
             }
@@ -556,8 +568,8 @@ insertImpl(
 
     // The key is definetively not in this table, try the next.
     doResize(t, tombstones);
-    locklessCheck(t->next.load(), log);
-    return insertImpl(t->next.load(), hash, key, keyAtom, valueAtom, dealloc);
+    locklessCheck(t->nextTable(), log);
+    return insertImpl(t->nextTable(), hash, key, keyAtom, valueAtom, dealloc);
 }
 
 
@@ -578,12 +590,17 @@ Map<Key, Value, Hash, MKey, MValue>::
 findImpl(Table* t, const size_t hash, const Key& key)
     -> std::pair<bool, Value>
 {
+    log.log(LogMap, "find-0", "table=%p", t);
+
     using namespace details;
 
     size_t tombstones = 0;
 
     for (size_t i = 0; i < ProbeWindow; ++i) {
         size_t probeBucket = this->bucket(hash, i, t->capacity);
+        log.log(LogMap, "probe",
+                "table=%p, capacity=%ld",
+                t, hash, i, t->capacity, probeBucket);
         Bucket& bucket = t->buckets[probeBucket];
         if (doMoveBucket(t, bucket)) continue;
 
@@ -647,8 +664,8 @@ findImpl(Table* t, const size_t hash, const Key& key)
 
     // The key is definetively not in this table, try the next.
     doResize(t, tombstones);
-    locklessCheck(t->next.load(), log);
-    return findImpl(t->next.load(), hash, key);
+    locklessCheck(t->nextTable(), log);
+    return findImpl(t->nextTable(), hash, key);
 }
 
 
@@ -666,6 +683,8 @@ compareExchangeImpl(
         Value& expected,
         ValueAtom desired)
 {
+    log.log(LogMap, "xch-0", "table=%p", t);
+
     using namespace details;
 
     size_t tombstones = 0;
@@ -674,6 +693,9 @@ compareExchangeImpl(
 
     for (size_t i = 0; i < ProbeWindow; ++i) {
         size_t probeBucket = this->bucket(hash, i, t->capacity);
+        log.log(LogMap, "probe",
+                "table=%p, capacity=%ld",
+                t, hash, i, t->capacity, probeBucket);
         Bucket& bucket = t->buckets[probeBucket];
         if (doMoveBucket(t, bucket)) continue;
 
@@ -696,7 +718,7 @@ compareExchangeImpl(
             continue;
         }
         if (isEmpty<MKey>(keyAtom)) {
-            ValueAtomizer::dealloc(desired);
+            ValueAtomizer::dealloc(clearMarks<MValue>(desired));
             return false;
         }
 
@@ -725,7 +747,7 @@ compareExchangeImpl(
 
             // Value not fully inserted yet; just bail.
             if (isEmpty<MValue>(valueAtom)) {
-                ValueAtomizer::dealloc(desired);
+                ValueAtomizer::dealloc(clearMarks<MValue>(desired));
                 return false;
             }
 
@@ -740,7 +762,10 @@ compareExchangeImpl(
             // make the exchange.
             if (bucket.valueAtom.compare_exchange_weak(valueAtom, desired)) {
                 // The value comes from the table so defer the dealloc.
-                rcu.defer([=] { ValueAtomizer::dealloc(valueAtom); });
+                if (!IsAtomic<Value>::value) {
+                    valueAtom = clearMarks<MValue>(valueAtom);
+                    rcu.defer([=] { ValueAtomizer::dealloc(valueAtom); });
+                }
                 return true;
             }
         }
@@ -750,8 +775,8 @@ compareExchangeImpl(
 
     // The key is definetively not in this table, try the next.
     doResize(t, tombstones);
-    locklessCheck(t->next.load(), log);
-    return compareExchangeImpl(t->next.load(), hash, key, expected, desired);
+    locklessCheck(t->nextTable(), log);
+    return compareExchangeImpl(t->nextTable(), hash, key, expected, desired);
 }
 
 
@@ -770,12 +795,17 @@ Map<Key, Value, Hash, MKey, MValue>::
 removeImpl(Table* t, const size_t hash, const Key& key)
     -> std::pair<bool, Value>
 {
+    log.log(LogMap, "remove-0", "table=%p", t);
+
     using namespace details;
 
     size_t tombstones = 0;
 
     for (size_t i = 0; i < ProbeWindow; ++i) {
         size_t probeBucket = this->bucket(hash, i, t->capacity);
+        log.log(LogMap, "probe",
+                "table=%p, capacity=%ld",
+                t, hash, i, t->capacity, probeBucket);
         Bucket& bucket = t->buckets[probeBucket];
         if (doMoveBucket(t, bucket)) continue;
 
@@ -843,19 +873,20 @@ removeImpl(Table* t, const size_t hash, const Key& key)
         valueAtom = bucket.valueAtom.exchange(newValueAtom);
 
         // The atoms come from the table so defer the delete in case someone's
-        // still them.
+        // still reading them.
+        keyAtom = clearMarks<MKey>(keyAtom);
+        valueAtom = clearMarks<MValue>(valueAtom);
         deallocAtomDefer(DeallocBoth, keyAtom, valueAtom);
 
-        return std::make_pair(
-                true, ValueAtomizer::load(clearMarks<MValue>(valueAtom)));
+        return std::make_pair(true, ValueAtomizer::load(valueAtom));
     }
 
     log.log(LogMap, "rmv-5", "tomb=%ld, table=%p", tombstones, t);
 
     // The key is definetively not in this table, try the next.
     doResize(t, tombstones);
-    locklessCheck(t->next.load(), log);
-    return removeImpl(t->next.load(), hash, key);
+    locklessCheck(t->nextTable(), log);
+    return removeImpl(t->nextTable(), hash, key);
 }
 
 
@@ -881,19 +912,20 @@ void
 Map<Key, Value, Hash, MKey, MValue>::
 resizeImpl(Table* start, size_t newCapacity, bool force)
 {
-    log.log(LogMap, "rsz-0", "newCapacity=%ld, force=%d", newCapacity, force);
+    log.log(LogMap, "rsz-0", "start=%p, newCapacity=%ld, force=%d",
+            start, newCapacity, force);
 
     using namespace details;
+
+    // 1. Insert the new table in the chain.
 
     std::unique_ptr<Table, MallocDeleter> safeNewTable;
     std::atomic<Table*>* prev = start ? &start->next : &table;
     Table* prevTable = start ? start : nullptr;
+    Table* curTable = prev->load();
     bool done = false;
 
-    // 1. Insert the new table in the chain.
     do {
-        Table* curTable = prev->load();
-
         log.log(LogMap, "rsz-1",
                 "prev=%p, prevTable=%p, curTable=%p, curCapacity=%ld, next=%p",
                 prev, prevTable, curTable,
@@ -905,18 +937,18 @@ resizeImpl(Table* start, size_t newCapacity, bool force)
             if (newCapacity == curTable->capacity) {
                 if (!force) return;
                 // Looking do to a cleanup but someone else is already doing it.
-                if (curTable->isResizing()) return;
+                if (start == curTable && curTable->isResizing()) return;
             }
 
-            prevTable = curTable;
-            prev = &curTable->next;
+            prevTable = Table::clearMark(curTable);
+            prev = &prevTable->next;
+            curTable = prev->load();
             continue;
         }
 
         if (!safeNewTable)
             safeNewTable.reset(Table::alloc(newCapacity));
 
-        locklessCheck(!curTable, log);
         done = prev->compare_exchange_weak(curTable, safeNewTable.get());
     } while(!done);
 
@@ -937,30 +969,53 @@ resizeImpl(Table* start, size_t newCapacity, bool force)
     // 3. Get rid of oldTable.
 
     Table* toRemove = prevTable;
-    prevTable = nullptr;
+
+  restart:
     prev = &table;
+    curTable = prev->load();
+    Table* oldTable = curTable;
 
-    done = false;
+    while(curTable) {
+        curTable = Table::clearMark(curTable);
 
-    do {
-        Table* curTable = prev->load();
-
-        log.log(LogMap, "rsz-3",
-                "prev=%p, prevTable=%p, curTable=%p, target=%p",
-                prev, prevTable, curTable, toRemove);
-
-        locklessCheck(curTable, log);
+        log.log(LogMap, "rsz-3", "prev=%p, cur=%p, target=%p",
+                prev, curTable, toRemove);
 
         if (curTable != toRemove) {
-            prevTable = curTable;
-            prev = &curTable->next;
+            Table* nextTable = curTable->next.load();
+
+            // We can't modify the next pointer of a table that is marked so
+            // keep the last unmarked prev pointer.
+            if (!Table::isMarked(nextTable)) {
+                prev = &curTable->next;
+                oldTable = nextTable;
+            }
+            curTable = Table::clearMark(nextTable);
             continue;
         }
 
-        done = prev->compare_exchange_weak(curTable, curTable->next.load());
-    } while(!done);
+        // Make sure nobody tries to modify our next pointer.
+        Table* nextTable = curTable->mark();
 
-    rcu.defer([=] { std::free(toRemove); });
+        // Remove our table from the list.
+        if (prev->compare_exchange_weak(oldTable, nextTable))
+            break;
+
+        // If our cas failed then prev was marked and we need to restart from
+        // scratch to find an earlier prev pointer.
+        if (Table::isMarked(oldTable)) goto restart;
+
+        // One of the later table beat us to removing ourself so just bail.
+        break;
+    }
+
+    log.log(LogMap, "defer", "table=%p, prev=%p, next=%p",
+            toRemove, prev->load(), toRemove->next.load());
+
+    rcu.defer([=] {
+                this->log.log(LogMap, "free", "table=%p", toRemove);
+                std::free(toRemove);
+            });
 }
 
 } // lockless
