@@ -307,8 +307,8 @@ dumpToStream(
         const std::vector<LogEntry>& dump, std::ostream& stream = std::cerr)
 {
     for (const LogEntry& entry : dump)
-        stream << entry.print() << "\n";
-    stream.flush();
+        stream << (entry.print() + "\n");
+    stream << std::flush;
 }
 
 /* Blah

@@ -5,6 +5,7 @@
    Description
 */
 
+#include <linux/futex.h>
 #include <signal.h>
 #include <errno.h>
 #include <cassert>
@@ -26,15 +27,18 @@ struct
 {
     struct sigaction oldact;
     function<void()> callback;
+    std::atomic<int> lock;
 
 } sigconfig;
 
 
 void signalAction(int sig, siginfo_t* info, void* ctx)
 {
-    printf("SIGSEGV handler triggered\n");
+    int oldVal = 0;
+    while (!sigconfig.lock.compare_exchange_weak(oldVal, 1)) oldVal = 0;
 
     sigconfig.callback();
+    fprintf(stderr, "\nSIGSEGV {%2ld}\n", details::threadId());
 
     if (sigconfig.oldact.sa_sigaction)
         sigconfig.oldact.sa_sigaction(sig, info, ctx);
@@ -52,6 +56,7 @@ void installSignalHandler(const std::function<void()>& callback)
     assert(!sigconfig.callback);
 
     sigconfig.callback = callback;
+    sigconfig.lock = 0;
 
     struct sigaction act;
     act.sa_sigaction = &signalAction;
