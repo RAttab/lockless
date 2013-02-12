@@ -1,0 +1,11 @@
+#!/bin/bash
+
+rm test.out test-head.out
+
+$1 2> test.out | tee test-head.out
+
+rm test-sorted.out
+cat test.out | sort -rbn > test-sorted.out
+
+rm test.out
+mv test-sorted.out test.out
