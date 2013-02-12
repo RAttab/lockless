@@ -63,12 +63,6 @@ struct Atomizer<T, true>
 
 private:
 
-    Atomizer()
-    {
-        assert(std::atomic<type>().is_lock_free());
-        assert(std::atomic<type>().is_lock_free());
-    }
-
     // \todo Need to make sure that value is right aligned on atom.
     // Otherwise the default MagicValues will clash on little-endian arch.
     struct Converter
@@ -80,6 +74,7 @@ private:
     };
 };
 
+
 template<typename T>
 struct Atomizer<T, false>
 {
@@ -90,9 +85,10 @@ struct Atomizer<T, false>
         return reinterpret_cast<type>(new T(value));
     }
 
-    static type alloc(T&& value)
+    template<typename V>
+    static type alloc(V&& value)
     {
-        return new T(std::forward(value));
+        return reinterpret_cast<type>(new T(std::forward<V>(value)));
     }
 
     static T load(type atom)
@@ -100,17 +96,10 @@ struct Atomizer<T, false>
         return *reinterpret_cast<T*>(atom);
     }
 
-    static void dealloc(type atom) {
+    static void dealloc(type atom)
+    {
         delete reinterpret_cast<T*>(atom);
     }
-
-private:
-
-    Atomizer()
-    {
-        assert(std::atomic<type>().is_lock_free());
-    }
-
 };
 
 
