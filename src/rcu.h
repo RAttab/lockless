@@ -119,7 +119,7 @@ struct Rcu
            often.
         */
         if (oldCount == 1 && epoch != current.load()) {
-            // I don't think this needs to be an atomic exchange.
+            // I don't think this needs to be atomic.
             deferHead = ep.deferList.exchange(nullptr);
 
             log.log(LogRcu, "exit-defer", "epoch=%ld, head=%p",
@@ -147,7 +147,7 @@ struct Rcu
 
 
         /* Defered entries can only be executed and deleted when they are in
-           other's list and other's counter is at 0. We can therfor avoid races
+           other's list and other's counter is at 0. We can therefor avoid races
            with exit() by adding our entry in current's defer list.
 
            There's still the issue of current being swaped with other while
@@ -169,10 +169,10 @@ struct Rcu
         // It's safe to add our entry now.
 
         auto& head = epochs[oldCurrent % 2].deferList;
-        DeferEntry* next;
+        DeferEntry* next = head.load();
 
         do {
-            entry->next.store(next = head.load());
+            entry->next.store(next);
         } while (!head.compare_exchange_weak(next, entry));
 
         log.log(LogRcu, "add-defer",
@@ -182,7 +182,8 @@ struct Rcu
         exit(oldCurrent);
     }
 
-    std::string print() const {
+    std::string print() const
+    {
         size_t oldCurrent = current.load();
         size_t oldOther = oldCurrent - 1;
 
