@@ -38,7 +38,8 @@ void signalAction(int sig, siginfo_t* info, void* ctx)
     while (!sigconfig.lock.compare_exchange_weak(oldVal, 1)) oldVal = 0;
 
     sigconfig.callback();
-    fprintf(stderr, "\nSIGSEGV {%2ld}\n", details::threadId());
+    fprintf(stderr, "\nSIGSEGV {%2ld}: addr=%p\n",
+            details::threadId(), info->si_addr);
 
     if (sigconfig.oldact.sa_sigaction)
         sigconfig.oldact.sa_sigaction(sig, info, ctx);
