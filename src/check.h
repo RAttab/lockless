@@ -8,6 +8,7 @@
 #ifndef __lockless__test_checks_h__
 #define __lockless__test_checks_h__
 
+#include "lock.h"
 #include "debug.h"
 #include "log.h"
 
@@ -41,12 +42,22 @@ struct CheckContext
 /* CHECK                                                                      */
 /******************************************************************************/
 
+namespace details {
+
+// Required to make sure log is fully dumped before aborting.
+extern Lock checkDumpLock;
+
+} // namespace details
+
 template<typename LogT>
 void check(const std::string& str, LogT& log, const CheckContext& ctx)
 {
     printf( "%s:%d: %s{%ld} %s\n",
             ctx.file, ctx.line, ctx.function,
             details::threadId(), str.c_str());
+
+    // While this is not entirely safe, we're about to abort anyway...
+    if (CheckAbort) details::checkDumpLock.lock();
 
     auto dump = log.dump();
     std::reverse(dump.begin(), dump.end());
@@ -89,7 +100,10 @@ std::string checkStr(
 /******************************************************************************/
 
 #define locklessCheckCtx(_pred_, _log_, _ctx_) \
-    lockless::check((_pred_), lockless::checkStr(#_pred_), _log_, _ctx_)
+    do {                                                                \
+        if (_pred_) break;                                              \
+        lockless::check(lockless::checkStr(#_pred_), _log_, _ctx_);     \
+    } while(false)                                                      \
 
 #define locklessCheck(_pred_, _log_) \
     locklessCheckCtx(_pred_, _log_, locklessCtx())
@@ -98,7 +112,7 @@ std::string checkStr(
     do {                                                                \
         decltype(_first_) firstVal = (_first_);                         \
         decltype(_second_) secondVal = (_second_);                      \
-        if (!(fieldVal _op_ secondVal)) break;                          \
+        if (firstVal _op_ secondVal) break;                             \
         lockless::check(                                                \
                 lockless::checkStr(#_op_, #_first_, firstVal, #_second_, secondVal), \
                 _log_, _ctx_);                                          \

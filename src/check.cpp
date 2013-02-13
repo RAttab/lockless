@@ -17,6 +17,14 @@ using namespace std;
 
 namespace lockless {
 
+
+/******************************************************************************/
+/* CHECK                                                                      */
+/******************************************************************************/
+
+namespace details { Lock checkDumpLock; }
+
+
 /******************************************************************************/
 /* SIGNAL CHECK                                                               */
 /******************************************************************************/
@@ -27,15 +35,14 @@ struct
 {
     struct sigaction oldact;
     function<void()> callback;
-    std::atomic<int> lock;
+    Lock lock;
 
 } sigconfig;
 
 
 void signalAction(int sig, siginfo_t* info, void* ctx)
 {
-    int oldVal = 0;
-    while (!sigconfig.lock.compare_exchange_weak(oldVal, 1)) oldVal = 0;
+    sigconfig.lock.lock();
 
     sigconfig.callback();
     fprintf(stderr, "\nSIGSEGV {%2ld}: addr=%p\n",
@@ -57,7 +64,6 @@ void installSignalHandler(const std::function<void()>& callback)
     assert(!sigconfig.callback);
 
     sigconfig.callback = callback;
-    sigconfig.lock = 0;
 
     struct sigaction act;
     act.sa_sigaction = &signalAction;
