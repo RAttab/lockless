@@ -42,10 +42,8 @@ struct CheckContext
 /******************************************************************************/
 
 template<typename LogT>
-void check(bool pred, const std::string& str, LogT& log, const CheckContext& ctx)
+void check(const std::string& str, LogT& log, const CheckContext& ctx)
 {
-    if (pred) return;
-
     printf( "%s:%d: %s{%ld} %s\n",
             ctx.file, ctx.line, ctx.function,
             details::threadId(), str.c_str());
@@ -100,8 +98,8 @@ std::string checkStr(
     do {                                                                \
         decltype(_first_) firstVal = (_first_);                         \
         decltype(_second_) secondVal = (_second_);                      \
+        if (!(fieldVal _op_ secondVal)) break;                          \
         lockless::check(                                                \
-                firstVal _op_ secondVal,                                \
                 lockless::checkStr(#_op_, #_first_, firstVal, #_second_, secondVal), \
                 _log_, _ctx_);                                          \
     } while (false)
