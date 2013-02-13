@@ -106,6 +106,9 @@ struct Log
         for (auto& entry : logs) entry.store(nullptr);
     }
 
+    // Dump clears out and cleans up all the entries.
+    ~Log() { dump(); }
+
     Log(const Log& other) = delete;
     Log& operator=(const Log& other) = delete;
 
