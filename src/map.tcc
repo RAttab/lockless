@@ -304,6 +304,9 @@ moveBucket(Table* dest, Bucket& src)
     size_t tombstones = 0;
     for (size_t i = 0; i < ProbeWindow; ++i) {
         size_t probeBucket = this->bucket(hash, i, dest->capacity);
+        log.log(LogMap, "probe",
+                "table=%p, capacity=%ld, bucket=%ld",
+                dest, dest->capacity, probeBucket);
         Bucket& bucket = dest->buckets[probeBucket];
         if (doMoveBucket(dest, bucket)) continue;
 
@@ -473,8 +476,8 @@ insertImpl(
     for (size_t i = 0; i < ProbeWindow; ++i) {
         size_t probeBucket = this->bucket(hash, i, t->capacity);
         log.log(LogMap, "probe",
-                "table=%p, capacity=%ld",
-                t, hash, i, t->capacity, probeBucket);
+                "table=%p, capacity=%ld, bucket=%ld",
+                t, t->capacity, probeBucket);
         Bucket& bucket = t->buckets[probeBucket];
         if (doMoveBucket(t, bucket)) continue;
 
@@ -599,8 +602,8 @@ findImpl(Table* t, const size_t hash, const Key& key)
     for (size_t i = 0; i < ProbeWindow; ++i) {
         size_t probeBucket = this->bucket(hash, i, t->capacity);
         log.log(LogMap, "probe",
-                "table=%p, capacity=%ld",
-                t, hash, i, t->capacity, probeBucket);
+                "table=%p, capacity=%ld, bucket=%ld",
+                t, t->capacity, probeBucket);
         Bucket& bucket = t->buckets[probeBucket];
         if (doMoveBucket(t, bucket)) continue;
 
@@ -694,8 +697,8 @@ compareExchangeImpl(
     for (size_t i = 0; i < ProbeWindow; ++i) {
         size_t probeBucket = this->bucket(hash, i, t->capacity);
         log.log(LogMap, "probe",
-                "table=%p, capacity=%ld",
-                t, hash, i, t->capacity, probeBucket);
+                "table=%p, capacity=%ld, bucket=%ld",
+                t, t->capacity, probeBucket);
         Bucket& bucket = t->buckets[probeBucket];
         if (doMoveBucket(t, bucket)) continue;
 
@@ -804,8 +807,8 @@ removeImpl(Table* t, const size_t hash, const Key& key)
     for (size_t i = 0; i < ProbeWindow; ++i) {
         size_t probeBucket = this->bucket(hash, i, t->capacity);
         log.log(LogMap, "probe",
-                "table=%p, capacity=%ld",
-                t, hash, i, t->capacity, probeBucket);
+                "table=%p, capacity=%ld, bucket=%ld",
+                t, t->capacity, probeBucket);
         Bucket& bucket = t->buckets[probeBucket];
         if (doMoveBucket(t, bucket)) continue;
 
