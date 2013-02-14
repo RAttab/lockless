@@ -1001,8 +1001,7 @@ resizeImpl(Table* start, size_t newCapacity, bool force)
         Table* nextTable = curTable->mark();
 
         // Remove our table from the list.
-        if (prev->compare_exchange_weak(oldTable, nextTable))
-            break;
+        if (prev->compare_exchange_strong(oldTable, nextTable)) break;
 
         // If our cas failed then prev was marked and we need to restart from
         // scratch to find an earlier prev pointer.
