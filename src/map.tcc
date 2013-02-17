@@ -981,8 +981,8 @@ resizeImpl(Table* start, size_t newCapacity, bool force)
     while(curTable) {
         curTable = Table::clearMark(curTable);
 
-        log.log(LogMap, "rsz-3", "prev=%p, cur=%p, target=%p",
-                prev, curTable, toRemove);
+        log.log(LogMap, "rsz-3", "prev=%p, cur=%p, next=%p, target=%p",
+                prev, curTable, curTable->next.load(), toRemove);
 
         if (curTable != toRemove) {
             Table* nextTable = curTable->next.load();
@@ -999,20 +999,24 @@ resizeImpl(Table* start, size_t newCapacity, bool force)
 
         // Make sure nobody tries to modify our next pointer.
         Table* nextTable = curTable->mark();
+        locklessCheck(!Table::isMarked(nextTable), log);
 
         // Remove our table from the list.
         if (prev->compare_exchange_strong(oldTable, nextTable)) break;
 
-        // If our cas failed then prev was marked and we need to restart from
-        // scratch to find an earlier prev pointer.
-        if (Table::isMarked(oldTable)) goto restart;
+        /* If the cas failed then it's either because prev was marked or because
+           a later table managed to finish before us and replaced our prev.
+           There also seems to be a third possibility which I can't quite figure
+           out.
 
-        // One of the later table beat us to removing ourself so just bail.
-        break;
+           Because of the third possibility, we need to play it safe and always
+           restart.
+         */
+        goto restart;
     }
 
     log.log(LogMap, "defer", "table=%p, prev=%p, next=%p",
-            toRemove, prev->load(), toRemove->next.load());
+            toRemove, prev, prev->load());
 
     rcu.defer([=] {
                 this->log.log(LogMap, "free", "table=%p", toRemove);

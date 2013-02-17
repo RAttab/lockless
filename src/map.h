@@ -219,8 +219,9 @@ private:
         Table* mark()
         {
             Table* oldTable = next.load();
-            Table* newTable;
+            if (isMarked(oldTable)) return clearMark(oldTable);
 
+            Table* newTable;
             do {
                 newTable =
                     reinterpret_cast<Table*>(uintptr_t(oldTable) | mask());
