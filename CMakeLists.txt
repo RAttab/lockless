@@ -52,14 +52,14 @@ install(
     FILES
     src/debug.h src/utils.h src/log.h src/check.h
     src/clock.h src/magic.h src/atomizer.h
-    src/rcu.h
-    src/map.h map.tcc
+    src/rcu.h src/snzi.h
+    src/map.h src/map.tcc
 
     DESTINATION
     include/lockless)
 
-add_library(lockless SHARED src/log.cpp src/check.cpp)
-install(TARGETS lockless DESTINATION lib)
+add_library(lockless_dbg SHARED src/log.cpp src/check.cpp)
+install(TARGETS lockless_dbg DESTINATION lib)
 
 
 #------------------------------------------------------------------------------#
@@ -68,7 +68,7 @@ install(TARGETS lockless DESTINATION lib)
 
 function(lockless_test name)
     add_executable(${name}_test tests/${name}_test.cpp)
-    target_link_libraries(${name}_test lockless boost_unit_test_framework)
+    target_link_libraries(${name}_test lockless_dbg boost_unit_test_framework)
     add_test(${name} bin/${name}_test)
 endfunction()
 
