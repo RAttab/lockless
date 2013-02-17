@@ -21,10 +21,10 @@
 
    I think one way to dynamically adjust to the current contention level is to
    make nodeForThread() smarter. The idea is that the lower you are in the tree
-   the more contention you've experienced. The idea is that everyone starts
-   working on the root and as their CAS fail, they get pushed back down the tree
-   or to their siblings. As their CAS succeed they get pushed back up the
-   tree. Could be tricky to get right and we'd need thread local variables.
+   the more contention you've experienced so thread would starts working on the
+   root and as their CAS fail or succeed, they get pushed up or down the tree.
+   Could be tricky to get right and we'd need thread local variables which is
+   always a pain..
 
 */
 
