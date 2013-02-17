@@ -52,12 +52,12 @@ extern Lock checkDumpLock;
 template<typename LogT>
 void check(const std::string& str, LogT& log, const CheckContext& ctx)
 {
+    // While this is not entirely safe, we're about to abort anyway...
+    if (CheckAbort) details::checkDumpLock.lock();
+
     printf( "%s:%d: %s{%ld} %s\n",
             ctx.file, ctx.line, ctx.function,
             details::threadId(), str.c_str());
-
-    // While this is not entirely safe, we're about to abort anyway...
-    if (CheckAbort) details::checkDumpLock.lock();
 
     auto dump = log.dump();
     std::reverse(dump.begin(), dump.end());
