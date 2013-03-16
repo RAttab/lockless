@@ -20,8 +20,25 @@ namespace lockless {
 /* QUEUE                                                                      */
 /******************************************************************************/
 
-/* Blah
+/* Unbounded lock free queue.
 
+   The secret sauce of this data-structure is the sentinel node that head always
+   points to which ensure that we never have to update both head and tail when
+   the list goes from empty to non-empty or vice-versa. If both head and tail
+   point to the same node then we know that the list is empty because head
+   always points to the sentinel node. If they're not equal then we can pop an
+   element by moving head forward which turns the head head into a sentinel
+   node (we first copy and return its value).
+
+   Note that the pushing into the queue is still a two step process where we
+   have to update the next pointer of the last node and update the tail. The
+   trick is that updating the tail can be done by any thread once the next
+   pointer has been set. For a push thread, this means that if tail's next
+   pointer is not null then we can move tail forward before we try to push
+   again. For a pop thread, this means that if tail and head are equal but head
+   has a next pointer then we can move tail forward before trying again.
+
+   All that's left is the node reclamation which is accomplished by RCU.
  */
 template<typename T>
 struct Queue
@@ -32,8 +49,6 @@ struct Queue
      */
     Queue() : rcu()
     {
-        assert(head.is_lock_free());
-
         Entry* sentinel = new Entry();
         head.store(sentinel);
         tail.store(sentinel);
@@ -54,12 +69,13 @@ struct Queue
 
         Entry* entry = new Entry(std::forward(value));
 
-        Entry* oldTail = tail.load();
         while(true) {
+            // Sentinel node ensures that old tail is not null.
+            Entry* oldTail = tail.load();
             Entry* oldNext = oldTail->next.load();
 
             if (!oldNext) {
-                if (!oldTail.compare_exchange_weak(oldNext, entry))
+                if (!oldTail->next.compare_exchange_weak(oldNext, entry))
                     continue;
 
                 // If this fails then someone else updated the pointer (see
@@ -87,18 +103,21 @@ struct Queue
         RcuGuard guard(rcu);
 
         while (true) {
-            Entry* oldHead = head.load();
+            Entry* oldNext = head->next.load();
             Entry* oldTail = tail.load();
 
-            if (oldHead != oldTail)
-                return { true, oldHead->value };
+            if (head == oldTail) {
+                // List is empty, bail.
+                if (!oldNext) return { false, T() };
 
-            Entry* oldNext = oldTail->next.load();
+                // tail is lagging behind so help move it forward.
+                tail.compare_exchange_weak(oldTail, oldNext);
+                continue;
+            }
 
-            if (!oldNext) return { false, T() };
+            locklessCheck(oldNext, log);
 
-            // tail is lagging behind so help move it forward.
-            tail.compare_exchange_strong(oldTail, oldNext);
+            return { true, oldNext->value };
         }
     }
 
@@ -114,28 +133,32 @@ struct Queue
     {
         RcuGuard guard(rcu);
 
-        Entry* oldHead = head.load();
-
         while(true) {
+            Entry* oldHead = head.load():
+            Entry* oldNext = oldHead->next.load();
             Entry* oldTail = tail.load();
 
             if (oldHead == oldTail) {
-                Entry* oldNext = oldTail->next.load();
-
+                // List is empty, bail.
                 if (!oldNext) return { false, T() };
 
                 // tail is lagging behind so help move it forward.
-                tail.compare_exchange_strong(oldTail, oldNext);
+                tail.compare_exchange_weak(oldTail, oldNext);
+                continue;
             }
 
-            else {
-                Entry* oldNext = oldHead->next.load();
-                if (!head.compare_exchange_weak(oldHead, oldNext)) continue;
+            // If this could be false then the list would be empty.
+            locklessCheck(oldNext, log);
 
-                T value = oldHead->value;
-                rcu.defer([=] { delete oldHead; });
-                return { true, oldHead->value };
-            }
+            // Move the head forward.
+            if (!head.compare_exchange_weak(oldHead, oldNext))
+                continue;
+
+            // Element successfully poped. oldNext is now the new sentinel so
+            // copy its value and delete the old sentinel oldHead.
+            T value = oldNext->value;
+            rcu.defer([=] { delete oldHead; });
+            return { true, value };
         }
     }
 
@@ -155,9 +178,15 @@ private:
         std::atomic<Entry*> next;
     };
 
-    Rcu rcu;
     std::atomic<Entry*> head;
     std::atomic<Entry*> tail;
+    Rcu rcu;
+
+public:
+
+    DebuggingLog<1000, DebugMap>::type log;
+    LogAggregator allLogs() { return LogAggregator(log, rcu.log); }
+
 };
 
 } // namespace lockless
