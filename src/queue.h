@@ -68,7 +68,9 @@ struct Queue
     {
         RcuGuard guard(rcu);
 
-        Entry* entry = new Entry(std::forward<T>(value));
+        log.log(LogQueue, "push", "value=%s", std::to_string(value).c_str());
+
+        Entry* entry = new Entry(std::forward<T2>(value));
 
         while(true) {
             // Sentinel node ensures that old tail is not null.
@@ -184,7 +186,7 @@ private:
 
         template<typename T2>
         Entry(T2&& newValue) :
-            value(std::forward<T>(newValue)),
+            value(std::forward<T2>(newValue)),
             next(0)
         {}
 
@@ -198,7 +200,7 @@ private:
 
 public:
 
-    DebuggingLog<1000, DebugMap>::type log;
+    DebuggingLog<1000, DebugQueue>::type log;
     LogAggregator allLogs() { return LogAggregator(log, rcu.log); }
 
 };
