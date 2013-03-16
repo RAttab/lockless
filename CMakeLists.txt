@@ -53,6 +53,7 @@ install(
     src/debug.h src/utils.h src/log.h src/check.h
     src/clock.h src/magic.h src/atomizer.h
     src/rcu.h src/snzi.h
+    src/queue.h
     src/map.h src/map.tcc
 
     DESTINATION
@@ -79,6 +80,8 @@ lockless_test(log_para)
 lockless_test(rcu)
 lockless_test(rcu_para)
 lockless_test(rcu_perf)
+
+lockless_test(queue)
 
 lockless_test(map)
 lockless_test(map_para)

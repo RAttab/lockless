@@ -38,7 +38,8 @@ namespace lockless {
    again. For a pop thread, this means that if tail and head are equal but head
    has a next pointer then we can move tail forward before trying again.
 
-   All that's left is the node reclamation which is accomplished by RCU.
+   All that's left is the node reclamation which is handled by the all powerful
+   RCU.
  */
 template<typename T>
 struct Queue
@@ -67,12 +68,16 @@ struct Queue
     {
         RcuGuard guard(rcu);
 
-        Entry* entry = new Entry(std::forward(value));
+        Entry* entry = new Entry(std::forward<T>(value));
 
         while(true) {
             // Sentinel node ensures that old tail is not null.
             Entry* oldTail = tail.load();
             Entry* oldNext = oldTail->next.load();
+
+            // \todo Need to test the impact of this opt.
+            // Avoids spinning on a CAS if possible.
+            if (tail.load() != oldTail) continue;
 
             if (!oldNext) {
                 if (!oldTail->next.compare_exchange_weak(oldNext, entry))
@@ -84,8 +89,8 @@ struct Queue
                 return;
             }
 
-            // Someone beat us to the enqueue so ensure that the tail is
-            // properly updated before continuing.
+            // Someone beat us to the push so ensure that the tail is properly
+            // updated before continuing.
             tail.compare_exchange_strong(oldTail, oldNext);
         }
     }
@@ -103,10 +108,15 @@ struct Queue
         RcuGuard guard(rcu);
 
         while (true) {
-            Entry* oldNext = head->next.load();
+            Entry* oldHead = head.load();
+            Entry* oldNext = oldHead->next.load();
             Entry* oldTail = tail.load();
 
-            if (head == oldTail) {
+            // \todo Need to test the impact of this opt.
+            // Avoids spinning on a CAS if possible.
+            if (head.load() != oldHead) continue;
+
+            if (oldHead == oldTail) {
                 // List is empty, bail.
                 if (!oldNext) return { false, T() };
 
@@ -134,9 +144,13 @@ struct Queue
         RcuGuard guard(rcu);
 
         while(true) {
-            Entry* oldHead = head.load():
+            Entry* oldHead = head.load();
             Entry* oldNext = oldHead->next.load();
             Entry* oldTail = tail.load();
+
+            // \todo Need to test the impact of this opt.
+            // Avoids spinning on a CAS if possible.
+            if (head.load() != oldHead) continue;
 
             if (oldHead == oldTail) {
                 // List is empty, bail.
@@ -156,7 +170,7 @@ struct Queue
 
             // Element successfully poped. oldNext is now the new sentinel so
             // copy its value and delete the old sentinel oldHead.
-            T value = oldNext->value;
+            T value = std::move(oldNext->value);
             rcu.defer([=] { delete oldHead; });
             return { true, value };
         }
@@ -170,7 +184,7 @@ private:
 
         template<typename T2>
         Entry(T2&& newValue) :
-            value(std::forward(newValue)),
+            value(std::forward<T>(newValue)),
             next(0)
         {}
 
