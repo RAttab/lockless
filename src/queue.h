@@ -116,8 +116,9 @@ struct Queue
         while (true) {
             Entry* oldHead = head.load();
 
-            // There's a read dependency between oldTail and oldNext. This is to
-            // ensures that if tail != head then will have been written.
+            // There's a read dependency between tail and next where tail MUST
+            // be read before next. This ensures that if tail != head then next
+            // != null.
             Entry* oldTail = tail.load();
             Entry* oldNext = oldHead->next.load();
 
@@ -157,8 +158,9 @@ struct Queue
         while(true) {
             Entry* oldHead = head.load();
 
-            // There's a read dependency between oldTail and oldNext. This is to
-            // ensures that if tail != head then will have been written.
+            // There's a read dependency between tail and next where tail MUST
+            // be read before next. This ensures that if tail != head then next
+            // != null.
             Entry* oldTail = tail.load();
             Entry* oldNext = oldHead->next.load();
 
