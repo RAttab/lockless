@@ -9,6 +9,8 @@
 #define __lockless_queue_h__
 
 #include "rcu.h"
+#include "log.h"
+#include "check.h"
 
 #include <atomic>
 
