@@ -9,7 +9,6 @@
 #define __lockless_utils_h__
 
 #include <cstdint>
-#include <cassert>
 #include <utility>
 #include <atomic>
 

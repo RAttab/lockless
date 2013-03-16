@@ -10,7 +10,6 @@
 
 #include "rcu.h"
 
-#include <cassert>
 #include <atomic>
 
 namespace lockless {
