@@ -28,3 +28,19 @@ Small note, some of these algorithms contains some pretty glaring performance
 flaws (eg. both epochs in Rcu are stored on the same cache line). I'm
 intentionally leaving these as is so that I can mesure their effects at a later
 undisclosed point in time.
+
+How to Build
+----------
+
+First off, get these dependencies from your local software distribution center:
+
+* cmake 2.6+
+* gcc 4.7+
+* gperftools' tcmalloc (optional but highly recomended).
+
+Next, enter these two magical commands:
+
+    cmake CMakeLists.txt
+    make all test
+
+That's it.
