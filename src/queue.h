@@ -16,7 +16,6 @@
 
 namespace lockless {
 
-
 /******************************************************************************/
 /* QUEUE                                                                      */
 /******************************************************************************/
@@ -74,14 +73,13 @@ struct Queue
         log.log(LogQueue, "push-0", "value=%s, entry=%p",
                 std::to_string(value).c_str(), entry);
 
-
         while(true) {
             // Sentinel node ensures that old tail is not null.
             Entry* oldTail = tail.load();
             Entry* oldNext = oldTail->next.load();
 
             // \todo Need to test the impact of this opt.
-            // Avoids spinning on a CAS if possible.
+            // Avoids spinning on a CAS in high contention scenarios.
             if (tail.load() != oldTail) continue;
 
             log.log(LogQueue, "push-1", "tail=%p, next=%p", oldTail, oldNext);
@@ -124,7 +122,7 @@ struct Queue
             Entry* oldNext = oldHead->next.load();
 
             // \todo Need to test the impact of this opt.
-            // Avoids spinning on a CAS if possible.
+            // Avoids spinning on a CAS in high contention scenarios.
             if (head.load() != oldHead) continue;
 
             if (oldHead == oldTail) {
@@ -166,7 +164,7 @@ struct Queue
             Entry* oldNext = oldHead->next.load();
 
             // \todo Need to test the impact of this opt.
-            // Avoids spinning on a CAS if possible.
+            // Avoids spinning on a CAS in high contention scenarios.
             if (head.load() != oldHead) continue;
 
             log.log(LogQueue, "pop-1", "head=%p, next=%p, tail=%p",

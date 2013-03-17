@@ -83,6 +83,7 @@ lockless_test(rcu_perf)
 
 lockless_test(queue)
 lockless_test(queue_para)
+lockless_test(queue_perf)
 
 lockless_test(map)
 lockless_test(map_para)
