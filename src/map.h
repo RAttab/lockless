@@ -55,6 +55,11 @@ class Map
         return static_cast<DeallocAtom>(dealloc & ~flag);
     }
 
+    DeallocAtom setDeallocFlag(DeallocAtom dealloc, DeallocAtom flag)
+    {
+        return static_cast<DeallocAtom>(dealloc | flag);
+    }
+
 public:
 
     /* Blah

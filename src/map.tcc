@@ -171,7 +171,7 @@ doMoveBucket(Table* t, Bucket& bucket)
 }
 
 
-/* The point of lockBucket is to avoid these 2 problems:
+/* The point of lockBucket is to maintain these 2 invariants:
 
    1. An inserted KV pair must be in at least one table at all time.
    2. An inserted KV pair must only be modifiable in one table.
@@ -249,10 +249,20 @@ lockBucket(Bucket& bucket)
 
     } while (!bucket.valueAtom.compare_exchange_weak(oldValueAtom, valueAtom));
 
-    // Ensures that if either are tombstone then both will be.
-    if (isTombstone<MValue>(valueAtom)) {
-        bucket.keyAtom.store(setTombstone<MKey>(keyAtom));
-    }
+    /* If value is tombstoned then we don't propagate it to the key on purpose.
+
+       The reason is that if we're moving a half-inserted bucket (key but no
+       value) and we were to fully tombstone that bucket then the tombstoned key
+       should be deleted. The problem is that there's simply no way to
+       differentiate between a half-inserted bucket and a thread that beat us to
+       the move in this function which means that we can't safely deleted the
+       key.
+
+       Instead we move the key to the new table and, in moveBucket, we leave the
+       tombstoned value empty. The result of this is that when the interupted
+       insert op is resumed, it will find its half inserted bucket and finish
+       its insertion.
+     */
 }
 
 
@@ -339,8 +349,11 @@ moveBucket(Table* dest, Bucket& src)
              */
             if (srcKeyAtom != destKeyAtom) continue;
         }
-        else if (!bucket.keyAtom.compare_exchange_weak(destKeyAtom, srcKeyAtom)) {
-            // Someone beat us; recheck the bucket to see if our key was involved.
+
+        else if (!bucket.keyAtom.compare_exchange_weak(destKeyAtom, srcKeyAtom))
+        {
+            // Someone beat us; recheck the bucket to see if our key was
+            // involved.
             --i;
             continue;
         }
@@ -352,17 +365,18 @@ moveBucket(Table* dest, Bucket& src)
 
         /* If it was tombstoned then someone else finished the move. bail.
 
-           Fun fact: It's possible that bucket is half built and will remain
+           Fun fact: It's possible that the bucket is half built and will remain
            like that after we bail. Turns out that this is perfectly acceptable
            because by definition this bucket is after the correctly moved bucket
-           and since it's half-built, it doesn't officially exit.
+           and since it's half-built, it doesn't officially exist.
 
            We could tombstone it but leaving like it is effectively equivalent.
            Better still, if our key gets removed and inserted again then this
            bucket will be ready for it. Otherwise it'll just get cleaned up in
            the next resize. No harm done.
 
-           \todo Actually, I'm not sure if this scenario is even possible.
+           This actually comes in handy to avoid memory leaks when moving a
+           half-inserted bucket.
          */
         if (isTombstone<MValue>(srcValueAtom)) return;
         locklessCheck(isMoving<MValue>(srcValueAtom), log);
@@ -396,10 +410,10 @@ moveBucket(Table* dest, Bucket& src)
         /* There's 2 reasons why the move may have found a tombstone in value:
 
            - Another thread completed the move and the key was then removed.
-           - A resize tombstoned our half moved key.
+           - A resize op tombstoned our half-moved bucket.
 
            The second scenario is the simplest. Since the move is still ongoing
-           then retrying is the correct action to take.
+           then retrying is the correct way to resolve the dilema.
 
            The first scenario is trickier; we know that the src bucket has been
            tombstoned because the dest bucket was tombstoned. The only way for
@@ -506,19 +520,35 @@ insertImpl(
                 continue;
         }
 
-        // If the key in the bucket is a match we can skip this step. The
-        // idea is if we have 2+ concurrent inserts for the same key then
-        // the winner is determined when writing the value.
-        else if (!bucket.keyAtom.compare_exchange_weak(bucketKeyAtom, keyAtom)){
-            // Someone beat us; recheck the bucket to see if our key wasn't
-            // involved.
-            --i;
-            continue;
-        }
+        else {
 
-        // If we inserted our key in the table then don't dealloc it. Even if
-        // the call fails!
-        else dealloc = clearDeallocFlag(dealloc, DeallocKey);
+            // Make sure that our key atom is still valid before we try to
+            // insert it. This is required because our insert op could have been
+            // interupted by a move op after it wrote its key. In this scenario,
+            // the move op would have wiped the key and rewriting our atom
+            // elsewhere would cause some trouble. Makes you wish you had a
+            // GC...
+            if (!(dealloc & DeallocKey)) {
+                keyAtom = KeyAtomizer::alloc(key);
+                dealloc = setDeallocFlag(dealloc, DeallocKey);
+            }
+
+            // If the key in the bucket is a match we can skip this step. The
+            // idea is if we have 2+ concurrent inserts for the same key then
+            // the winner is determined when writing the value.
+            else if (!bucket.keyAtom.compare_exchange_weak(bucketKeyAtom, keyAtom))
+            {
+                // Someone beat us; recheck the bucket to see if our key wasn't
+                // involved.
+                --i;
+                continue;
+            }
+
+            // If we inserted our key in the table then don't dealloc it. Even
+            // if the call fails!
+            else dealloc = clearDeallocFlag(dealloc, DeallocKey);
+
+        }
 
 
         // 2. Set the value.
