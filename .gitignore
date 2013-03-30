@@ -22,3 +22,11 @@ CMakeFiles
 Makefile
 Testing
 CTestTestfile.cmake
+
+# Emacs temp files.
+.#*
+\#*#
+~*
+
+# Test artifacts
+test.log
