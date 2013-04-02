@@ -24,6 +24,9 @@ namespace lockless {
 // \todo Configure at build time.
 enum { CacheLine = 64 };
 
+// Thread local storage.
+#define LOCKLESS_TLS __thread __attribute__(( tls_model("initial-exec") ))
+
 
 /******************************************************************************/
 /* MALLOC DELETER                                                             */

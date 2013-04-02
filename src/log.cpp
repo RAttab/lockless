@@ -30,14 +30,11 @@ namespace {
 
 atomic<size_t> GlobalThreadCounter{1};
 
-/* Need to double check how __thread is actually implemented. */
-__thread size_t LocalThreadId{0};
+LOCKLESS_TLS size_t LocalThreadId{0};
 
 } // namespace anonymous
 
-/* Could also use std::this_thread::get_id (equivalent to pthread_self) so the
-   ids are more difficult to read and understand.
- */
+
 size_t threadId()
 {
     if (!LocalThreadId)

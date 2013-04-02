@@ -144,8 +144,8 @@ struct Log
 
     /* Blah
 
-       \todo GCC has a printf param check. No idea if it works with variadic
-             templates.
+       \todo GCC has a printf param check builtin. No idea if it works with
+             variadic templates.
      */
     template<typename Title, typename... Args>
     void log(LogType type, Title&& title, const std::string& fmt, Args&&... args)
@@ -235,11 +235,6 @@ struct DebuggingLog
 {
     typedef Log<flag ? Size : 0> type;
 };
-
-
-/******************************************************************************/
-/* NULL LOG                                                                   */
-/******************************************************************************/
 
 namespace { Log<0> NullLog; }
 
