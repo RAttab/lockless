@@ -78,6 +78,7 @@ lockless_test(log)
 lockless_test(log_para)
 
 lockless_test(list)
+lockless_test(list_para)
 
 lockless_test(rcu)
 lockless_test(rcu_para)

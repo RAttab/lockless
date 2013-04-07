@@ -22,7 +22,6 @@
 
 #include <atomic>
 #include <utility>
-#include <cassert>
 
 namespace lockless {
 
@@ -108,13 +107,15 @@ struct ListNode
     Node* next() const { return details::clearMark(rawNext.load()); }
     void next(Node* node)
     {
-        assert(!isMarked()); // Protects the invariant.
+        locklessCheck(!isMarked(), NullLog); // Protects the invariant.
         rawNext = node;
     }
 
     bool compare_exchange_next(Node*& expected, Node* newNext)
     {
-        assert(!details::isMarked(expected)); // Protects the invariant.
+        // Protects the invariant.
+        locklessCheck(!details::isMarked(expected), NullLog);
+
         return rawNext.compare_exchange_strong(expected, newNext);
     }
 
@@ -165,6 +166,7 @@ struct List
 
     void push(Node* node)
     {
+        if (!node) return;
         locklessCheckEq(details::clearMark(node), node, log);
 
         Node* lastNode = node;
@@ -173,7 +175,7 @@ struct List
         Node* next = head;
         do {
             lastNode->next(next);
-        } while (head.compare_exchange_weak(next, node));
+        } while (!head.compare_exchange_weak(next, node));
     }
 
     Node* pop()
