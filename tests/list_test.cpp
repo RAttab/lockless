@@ -97,8 +97,9 @@ BOOST_FIXTURE_TEST_CASE(test_push_pop, ListFixture)
     // fixture does the pushing.
 
     for (size_t i = 0; i < 10; ++i) {
-        ListNode<size_t>* node = list.pop();
+        Node* node = list.pop();
         locklessCheckEq(*node, 9-i, log);
+        locklessCheckEq(node->next(), list.head.load(), log);
         delete node;
     }
 }
@@ -130,6 +131,7 @@ BOOST_FIXTURE_TEST_CASE(test_pop_marked, ListFixture)
             continue;
         }
 
+        locklessCheckEq(node->next(), list.head.load(), log);
         locklessCheck(node, log);
         locklessCheckEq(*node, size - i - 1, log);
         delete node;
@@ -139,16 +141,34 @@ BOOST_FIXTURE_TEST_CASE(test_pop_marked, ListFixture)
     locklessCheckEq(unmarked, size / 2, log);
 }
 
-BOOST_FIXTURE_TEST_CASE(test_insert, ListFixture)
-{
-    cerr << fmtTitle("insert", '=') << endl;
-
-
-
-}
-
 BOOST_FIXTURE_TEST_CASE(test_remove, ListFixture)
 {
-    cerr << fmtTitle("pop marked", '=') << endl;
+    cerr << fmtTitle("remove", '=') << endl;
 
+    cerr << fmtTitle("skip") << endl;
+
+    Node* node = list.head;
+    size_t sum = 0;
+    while (node && node->next()) {
+        locklessCheck(list.remove(node), log);
+        Node* next = node->next();
+
+        sum += *node;
+        delete node;
+        node = next->next();
+    }
+
+    cerr << fmtTitle("all") << endl;
+
+    node = list.head;
+    while (node) {
+        locklessCheck(list.remove(node), log);
+        Node* next = node->next();
+
+        sum += *node;
+        delete node;
+        node = next;
+    }
+
+    locklessCheckEq(sum, ((size-1) * size) / 2, log);
 }

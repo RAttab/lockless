@@ -183,7 +183,6 @@ struct List
             if (!node) return nullptr;
         } while(!head.compare_exchange_weak(node, node->next()));
 
-        node->reset();
         return node;
     }
 
@@ -194,7 +193,6 @@ struct List
             if (!node || !node->isMarked()) return nullptr;
         } while(!head.compare_exchange_weak(node, node->next()));
 
-        node->reset();
         return node;
 
     }
@@ -231,10 +229,9 @@ struct List
 
             // Linearilization point for two threads trying to remove the same
             // node is the first node to complete this call.
-            if (!prev->compare_exchange_next(node, oldNext))
+            if (!prev->compare_exchange_strong(node, oldNext))
                 goto restart;
 
-            toRemove->reset();
             return true;
         }
     }
