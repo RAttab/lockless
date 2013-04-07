@@ -51,6 +51,12 @@ namespace std {
 
 inline std::string to_string(const std::string& str) { return str; }
 
+template<typename T>
+std::string to_string(T* p)
+{
+    return std::to_string(reinterpret_cast<void*>(p));
+}
+
 template<typename First, typename Second>
 std::string to_string(const std::pair<First, Second>& p)
 {
