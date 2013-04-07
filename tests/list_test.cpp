@@ -18,61 +18,110 @@ using namespace lockless;
 
 BOOST_AUTO_TEST_CASE(test_node)
 {
+    cerr << fmtTitle("node", '=') << endl;
+
     typedef ListNode<size_t> Node;
 
     Node(); // default constructor.
 
     Node a(size_t(10));
-    BOOST_CHECK_EQUAL(a, size_t(10));
-    BOOST_CHECK_EQUAL(a.get(), 10);
-    BOOST_CHECK(a.next() == nullptr);
+    locklessCheckEq(a, size_t(10), NullLog);
+    locklessCheckEq(a.get(), size_t(10), NullLog);
+    locklessCheckEq(a.next(), nullptr, NullLog);
 
     Node b(20);
-    BOOST_CHECK_EQUAL(b, size_t(20));
-    BOOST_CHECK_EQUAL(b.get(), 20);
-    BOOST_CHECK(b.next() == nullptr);
+    locklessCheckEq(b, size_t(20), NullLog);
+    locklessCheckEq(b.get(), size_t(20), NullLog);
+    locklessCheckEq(b.next(), nullptr, NullLog);
 
     Node* exp = nullptr;
-    BOOST_CHECK(a.compare_exchange_next(exp, &b));
-    BOOST_CHECK(exp == nullptr);
+    locklessCheck(a.compare_exchange_next(exp, &b), NullLog);
+    locklessCheckEq(exp, nullptr, NullLog);
 
-    BOOST_CHECK(!a.compare_exchange_next(exp, &b));
-    BOOST_CHECK_EQUAL(exp, &b);
+    locklessCheck(!a.compare_exchange_next(exp, &b), NullLog);
+    locklessCheckEq(exp, &b, NullLog);
 
     Node c{Node(a)}; // copy & move constructor.
-    BOOST_CHECK_EQUAL(c, size_t(10));
-    BOOST_CHECK_EQUAL(c.get(), 10);
-    BOOST_CHECK(c.next() == nullptr);
-    
+    locklessCheckEq(c, size_t(10), NullLog);
+    locklessCheckEq(c.get(), size_t(10), NullLog);
+    locklessCheckEq(c.next(), nullptr, NullLog);
+
     Node* pNil = b.mark();
-    BOOST_CHECK(b.isMarked());
-    BOOST_CHECK(pNil == nullptr);
-    BOOST_CHECK_EQUAL(b.next(), pNil);
+    locklessCheck(b.isMarked(), NullLog);
+    locklessCheckEq(pNil, nullptr, NullLog);
+    locklessCheckEq(b.next(), pNil, NullLog);
 
     b.reset();
-    BOOST_CHECK(!b.isMarked());
-    BOOST_CHECK(b.next() == nullptr);
+    locklessCheck(!b.isMarked(), NullLog);
+    locklessCheckEq(b.next(), nullptr, NullLog);
 
     Node* pB = a.mark();
-    BOOST_CHECK(a.isMarked());
-    BOOST_CHECK_EQUAL(pB, &b);
-    BOOST_CHECK_EQUAL(a.next(), pB);
+    locklessCheck(a.isMarked(), NullLog);
+    locklessCheckEq(pB, &b, NullLog);
+    locklessCheckEq(a.next(), pB, NullLog);
 
     a.reset();
-    BOOST_CHECK(!a.isMarked());
-    BOOST_CHECK(a.next() == nullptr);
+    locklessCheck(!a.isMarked(), NullLog);
+    locklessCheckEq(a.next(), nullptr, NullLog);
 }
 
-BOOST_AUTO_TEST_CASE(test_list_basic)
+BOOST_AUTO_TEST_CASE(test_push_pop)
 {
-    List<size_t> head;
+    cerr << fmtTitle("push pop", '=') << endl;
 
-    for (size_t i = 0; i < 10; ++i)
-        head.push(new ListNode<size_t>(i));
+    List<size_t> list;
+    auto& log = list.log;
 
     for (size_t i = 0; i < 10; ++i) {
-        ListNode<size_t>* node = head.pop();
-        BOOST_CHECK_EQUAL(*node, 9-i);
+        auto* node = new ListNode<size_t>(i);
+        list.push(node);
+        locklessCheckEq(list.head.load(), node, log);
+    }
+
+    for (size_t i = 0; i < 10; ++i) {
+        ListNode<size_t>* node = list.pop();
+        locklessCheckEq(*node, 9-i, log);
         delete node;
     }
+}
+
+BOOST_AUTO_TEST_CASE(test_pop_marked)
+{
+    cerr << fmtTitle("pop marked", '=') << endl;
+
+    List<size_t> list;
+    auto& log = list.log;
+
+    cerr << fmtTitle("push") << endl;
+
+    for (size_t i = 0; i < 10; ++i)
+        list.push(new ListNode<size_t>(i));
+
+    cerr << fmtTitle("mark") << endl;
+
+    auto* node = list.head.load();
+    while (node && node->next()) {
+        node->mark();
+        locklessCheck(node->isMarked(), list.log);
+        node = node->next()->next();
+    }
+
+    cerr << fmtTitle("pop") << endl;
+
+    for (size_t i = 0; i < 10; ++i) {
+        node = list.popMarked();
+
+        if (node == nullptr) {
+            locklessCheckEq(node, nullptr, log);
+            list.head.load()->mark();
+            i--;
+            continue;
+        }
+
+        locklessCheck(node, log);
+        locklessCheckEq(*node, 9-i, log);
+        delete node;
+    }
+
+    locklessCheckEq(list.head.load(), nullptr, log);
 }
