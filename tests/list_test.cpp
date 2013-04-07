@@ -8,6 +8,9 @@
 #define BOOST_TEST_MAIN
 #define BOOST_TEST_DYN_LINK
 
+#define LOCKLESS_LIST_DEBUG 1
+#define LOCKLESS_CHECK_ABORT 1
+
 #include "list.h"
 #include "test_utils.h"
 
@@ -65,18 +68,33 @@ BOOST_AUTO_TEST_CASE(test_node)
     locklessCheckEq(a.next(), nullptr, NullLog);
 }
 
-BOOST_AUTO_TEST_CASE(test_push_pop)
+
+
+struct ListFixture
+{
+    typedef ListNode<size_t> Node;
+
+    ListFixture() : size(10), log(list.log)
+    {
+        for (size_t i = 0; i < size; ++i) {
+            Node* node = new Node(i);
+            list.push(node);
+            locklessCheckEq(list.head.load(), node, log);
+        }
+    }
+
+    const size_t size;
+
+    List<size_t> list;
+    decltype(list.log)& log;
+};
+
+
+BOOST_FIXTURE_TEST_CASE(test_push_pop, ListFixture)
 {
     cerr << fmtTitle("push pop", '=') << endl;
 
-    List<size_t> list;
-    auto& log = list.log;
-
-    for (size_t i = 0; i < 10; ++i) {
-        auto* node = new ListNode<size_t>(i);
-        list.push(node);
-        locklessCheckEq(list.head.load(), node, log);
-    }
+    // fixture does the pushing.
 
     for (size_t i = 0; i < 10; ++i) {
         ListNode<size_t>* node = list.pop();
@@ -85,21 +103,13 @@ BOOST_AUTO_TEST_CASE(test_push_pop)
     }
 }
 
-BOOST_AUTO_TEST_CASE(test_pop_marked)
+BOOST_FIXTURE_TEST_CASE(test_pop_marked, ListFixture)
 {
     cerr << fmtTitle("pop marked", '=') << endl;
 
-    List<size_t> list;
-    auto& log = list.log;
-
-    cerr << fmtTitle("push") << endl;
-
-    for (size_t i = 0; i < 10; ++i)
-        list.push(new ListNode<size_t>(i));
-
     cerr << fmtTitle("mark") << endl;
 
-    auto* node = list.head.load();
+    Node* node = list.head;
     while (node && node->next()) {
         node->mark();
         locklessCheck(node->isMarked(), list.log);
@@ -107,21 +117,38 @@ BOOST_AUTO_TEST_CASE(test_pop_marked)
     }
 
     cerr << fmtTitle("pop") << endl;
+    size_t unmarked = 0;
 
-    for (size_t i = 0; i < 10; ++i) {
+    for (size_t i = 0; i < size; ++i) {
         node = list.popMarked();
 
         if (node == nullptr) {
             locklessCheckEq(node, nullptr, log);
             list.head.load()->mark();
+            unmarked++;
             i--;
             continue;
         }
 
         locklessCheck(node, log);
-        locklessCheckEq(*node, 9-i, log);
+        locklessCheckEq(*node, size - i - 1, log);
         delete node;
     }
 
     locklessCheckEq(list.head.load(), nullptr, log);
+    locklessCheckEq(unmarked, size / 2, log);
+}
+
+BOOST_FIXTURE_TEST_CASE(test_insert, ListFixture)
+{
+    cerr << fmtTitle("insert", '=') << endl;
+
+
+
+}
+
+BOOST_FIXTURE_TEST_CASE(test_remove, ListFixture)
+{
+    cerr << fmtTitle("pop marked", '=') << endl;
+
 }

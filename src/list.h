@@ -143,6 +143,26 @@ struct List
 {
     typedef ListNode<T> Node;
 
+    List() : head(nullptr) {}
+
+    List(const List&) = delete;
+    List& operator=(const List&) = delete;
+
+    List(List&& other) :
+        head(other.head.exchange(nullptr)),
+        log(std::move(other.log))
+    {}
+
+    List& operator=(List&& other)
+    {
+        if (&other == this) return *this;
+
+        head = other.head.exchange(nullptr);
+        log = std::move(other.log);
+
+        return *this;
+    }
+
     void push(Node* node)
     {
         locklessCheckEq(details::clearMark(node), node, log);
