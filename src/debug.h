@@ -23,18 +23,21 @@ namespace lockless {
 #   define LOCKLESS_RCU_DEBUG 0
 #endif
 
-#ifndef LOCKLESS_MAP_DEBUG
-#   define LOCKLESS_MAP_DEBUG 0
+#ifndef LOCKLESS_LIST_DEBUG
+#   define LOCKLESS_LIST_DEBUG 0
 #endif
 
 #ifndef LOCKLESS_QUEUE_DEBUG
 #   define LOCKLESS_QUEUE_DEBUG 0
 #endif
 
+#ifndef LOCKLESS_MAP_DEBUG
+#   define LOCKLESS_MAP_DEBUG 0
+#endif
+
 #ifndef LOCKLESS_SNZI_DEBUG
 #   define LOCKLESS_SNZI_DEBUG 0
 #endif
-
 
 #ifndef LOCKLESS_CHECK_ABORT
 #   define LOCKLESS_CHECK_ABORT 0
@@ -45,6 +48,7 @@ enum DebugFlags
     DebugLog   = LOCKLESS_LOG_DEBUG,
     DebugRcu   = LOCKLESS_RCU_DEBUG,
     DebugQueue = LOCKLESS_QUEUE_DEBUG,
+    DebugList  = LOCKLESS_LIST_DEBUG,
     DebugMap   = LOCKLESS_MAP_DEBUG,
     DebugSnzi  = LOCKLESS_SNZI_DEBUG,
 

@@ -17,43 +17,95 @@
 #ifndef __lockless__list_h__
 #define __lockless__list_h__
 
+#include "log.h"
+#include "check.h"
+
 #include <atomic>
+#include <utility>
+#include <cassert>
 
 namespace lockless {
 
 template<typename T> struct List;
 
+
 /******************************************************************************/
 /* LIST NODE                                                                  */
 /******************************************************************************/
 
+// Strong typing can be such a pain sometimes...
+namespace details {
+
+template<typename Node>
+Node* clearMark(Node* node)
+{
+    return reinterpret_cast<Node*>(uintptr_t(node) & ~uintptr_t(1));
+}
+
+template<typename Node>
+Node* setMark(Node* node)
+{
+    return reinterpret_cast<Node*>(uintptr_t(node) | uintptr_t(1));
+}
+
+template<typename Node>
+bool isMarked(Node* node)
+{
+    return uintptr_t(node) & uintptr_t(1);
+}
+
+} // namespace details
+
+
+/**
+
+ */
 template<typename T>
 struct ListNode
 {
     typedef ListNode<T> Node;
 
-    template<typename Value>
-    ListNode(Value&& value) :
-        data(std::forward<Value>(value)),
+    static constexpr uintptr_t MARK = 1;
+
+    ListNode() : value(), rawNext(nullptr) {}
+
+    template<typename... Args>
+    ListNode(Args&&... args) :
+        value(std::forward<Args>(args)...),
         rawNext(nullptr)
     {}
 
-    operator T& () const
+    template<typename Value>
+    ListNode(Value&& value) :
+        value(std::forward<Value>(value)),
+        rawNext(nullptr)
+    {}
+
+    template<typename Value>
+    ListNode<T>& operator= (Value&& other)
     {
-        return data;
+        value = std::forward<Value>(other);
+        return *this;
     }
 
-    bool isMarked() const { return rawNext & 1; }
+
+    T& get() { return value; }
+    const T& get() const { return value; }
+
+    operator T& () { return get(); }
+    operator const T& () const { return get(); }
+
+    bool isMarked() const { return details::isMarked(rawNext.load()); }
     Node* mark()
     {
         Node* oldNext = rawNext;
-        while (!rawNext.compare_exchange_weak(oldNext, oldNext | 1));
-        return oldNext & ~1;
+        while (!rawNext.compare_exchange_weak(oldNext, details::setMark(oldNext)));
+        return details::clearMark(oldNext);
     }
 
     void reset() { rawNext = nullptr; }
 
-    Node* next() const { return rawNext & ~1; }
+    Node* next() const { return details::clearMark(rawNext.load()); }
     void next(Node* node)
     {
         assert(!isMarked()); // Protects the invariant.
@@ -62,7 +114,7 @@ struct ListNode
 
     bool compare_exchange_next(Node*& expected, Node* newNext)
     {
-        assert(expected & ~1 == expected); // Protects the invariant.
+        assert(!details::isMarked(expected)); // Protects the invariant.
         return rawNext.compare_exchange_strong(expected, newNext);
     }
 
@@ -93,11 +145,14 @@ struct List
 
     void push(Node* node)
     {
-        locklessCheckEq(node & ~1, node, log);
+        locklessCheckEq(details::clearMark(node), node, log);
+
+        Node* lastNode = node;
+        while (lastNode->next()) lastNode = lastNode->next();
 
         Node* next = head;
         do {
-            node->next(next);
+            lastNode->next(next);
         } while (head.compare_exchange_weak(next, node));
     }
 
@@ -120,7 +175,7 @@ struct List
         } while(!head.compare_exchange_weak(node, node->next()));
 
         node->reset();
-        return next;
+        return node;
 
     }
 
