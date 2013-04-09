@@ -137,7 +137,7 @@ BOOST_FIXTURE_TEST_CASE(test_pop_marked, ListFixture)
         delete node;
     }
 
-    locklessCheckEq(list.head.load(), nullptr, log);
+    locklessCheck(list.empty(), log);
     locklessCheckEq(unmarked, size / 2, log);
 }
 

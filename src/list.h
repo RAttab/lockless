@@ -150,8 +150,7 @@ struct List
     List& operator=(const List&) = delete;
 
     List(List&& other) :
-        head(other.head.exchange(nullptr)),
-        log(std::move(other.log))
+        head(other.head.exchange(nullptr))
     {}
 
     List& operator=(List&& other)
@@ -159,10 +158,11 @@ struct List
         if (&other == this) return *this;
 
         head = other.head.exchange(nullptr);
-        log = std::move(other.log);
 
         return *this;
     }
+
+    bool empty() const { return head == nullptr; }
 
     void push(Node* node)
     {
