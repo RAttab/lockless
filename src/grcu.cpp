@@ -6,6 +6,7 @@
 */
 
 #include "grcu.h"
+#include "tls.h"
 #include "log.h"
 #include "check.h"
 
@@ -13,6 +14,8 @@
 #include <thread>
 #include <mutex>
 #include <pthread.h>
+
+using namespace std;
 
 namespace lockless {
 
@@ -24,23 +27,27 @@ namespace {
 
 struct Epoch
 {
-    Epoch() : count(0) {}
+    void init()
+    {
+        count = 0;
+        deferList.head = nullptr;
+    }
 
     size_t count;
-    List<DeferFn> deferList;
+    List<GlobalRcu::DeferFn> deferList;
 };
 
-struct Epochs : array<Epoch, 2>
+struct Epochs : public array<Epoch, 2>
 {
     Epochs()
     {
-        for (auto& epoch : *this) epoch = Epoch();
+        for (auto& epoch : *this) epoch.init();
     }
 };
 
 struct GlobalRcuImpl
 {
-    GlobalRcuImpl() : refCount(0), lock() {}
+    GlobalRcuImpl() : lock(), refCount(0)  {}
 
     Lock lock;
     size_t refCount;
@@ -58,29 +65,21 @@ struct GlobalRcuImpl
 /* TLS                                                                        */
 /******************************************************************************/
 
-LOCKLESS_TLS ListNode<Epochs>* nodeTls;
-
-void destructTls(void*)
+void constructTls(ListNode<Epochs>& node)
 {
-    if (!nodeTls) return;
-
-    for (size_t i = 0; i < 2; ++i)
-        locklessCheckEq((*nodeTls)[i].count, 0, gRcu.log);
-
-    // We can't delete the node here without racing with a gc op.
-    nodeTls->mark();
+    gRcu.threadList.push(&node);
 }
 
-Epochs& getTls()
+void destructTls(ListNode<Epochs>& node)
 {
-    if (nodeTls) return *nodeTls;
-
-    nodeTls = new ListNode<Epochs>();
-    pthread_key_create(nullptr, &destructTls);
-
-    gRcu.threadList.push(nodeTls);
-    return *nodeTls;
+    // It's simpler if only the gc thread can remove nodes from the list.
+    node.mark();
 }
+
+// Direct access to a node for a given thread.
+Tls<ListNode<Epochs> > nodeTls(&constructTls, &destructTls);
+
+Epochs& getTls() { return nodeTls.get(); }
 
 } // namespace anonymous
 
@@ -100,7 +99,7 @@ GlobalRcu()
     gRcu.refCount++;
     if (gRcu.refCount > 1) return;
 
-    locklessCheck(threadList.empty(), gRcu.log);
+    locklessCheck(gRcu.threadList.empty(), gRcu.log);
 
     gRcu.epoch = 1;
     gRcu.gcDump = new ListNode<Epochs>();
@@ -115,19 +114,22 @@ GlobalRcu::
     gRcu.refCount--;
     if (gRcu.refCount > 0) return;
 
-    locklessCheck(threadList.empty(), gRcu.log);
-    delete gcDump;
+    locklessCheck(gRcu.threadList.empty(), gRcu.log);
+    delete gRcu.gcDump;
 }
 
 size_t
 GlobalRcu::
 enter()
 {
-    getTls()[gRcu.epoch & 1]++;
+    size_t epoch = gRcu.epoch;
+    getTls()[epoch & 1].count++;
 
     // Prevents reads from being taking place before we increment the epoch
     // counter.
     atomic_thread_fence(memory_order_acquire);
+
+    return epoch;
 }
 
 void
@@ -144,7 +146,7 @@ exit(size_t epoch)
 
 void
 GlobalRcu::
-defer(DeferList<DeferFn>* node)
+defer(ListNode<DeferFn>* node)
 {
     getTls()[gRcu.epoch & 1].deferList.push(node);
 }
@@ -160,11 +162,11 @@ deleteMarkedNode(
     // Move all leftover defer work to the gcDump node which will be gc-ed on
     // the next successful gc pass for that epoch.
     for (size_t i = 0; i < 2; ++i) {
-        Epoch& nodeEpoch = (*node)[i];
-        locklessCheckEq(nodeEpoch.count, 0, gRcu.log);
+        Epoch& nodeEpoch = node->get()[i];
+        locklessCheckEq(nodeEpoch.count, 0ULL, gRcu.log);
 
-        Epoch& gcEpoch = (*gRcu->gcDump)[i];
-        gcEpoch.deferList.push(std::move(nodeEpoch.deferList));
+        Epoch& gcEpoch = gRcu.gcDump->get()[i];
+        gcEpoch.deferList.take(nodeEpoch.deferList);
     }
 
     auto* next = node->next();
@@ -181,15 +183,15 @@ deleteMarkedNode(
     return next;
 }
 
-void execute(List<DeferFn>& target)
+void execute(List<GlobalRcu::DeferFn>& target)
 {
-    ListNode<DeferFn>* node = target.head.exchange(nullptr);
+    auto* node = target.head.exchange(nullptr);
 
     while (node) {
         // exec the defered work.
-        (*node)();
+        node->get()();
 
-        ListNode<DeferFn>* next = node->next();
+        auto* next = node->next();
         delete node;
         node = next;
     }
@@ -208,7 +210,7 @@ gc()
 
     size_t epoch = (gRcu.epoch - 1) & 1;
 
-    ListNode<Epochs>* node = threadList.head;
+    ListNode<Epochs>* node = gRcu.threadList.head;
     ListNode<Epochs>* prev = nullptr;
     locklessCheckNe(node, nullptr, gRcu.log);
 
@@ -222,7 +224,7 @@ gc()
         }
 
         // Someone's still in the epoch so we can't gc anything; just bail.
-        if ((*node)[epoch].count) return false;
+        if (node->get()[epoch].count) return false;
 
         prev = node;
         node = node->next();
@@ -234,8 +236,8 @@ gc()
 
     // It's safe to start modifying the gc lists so start doing just that.
     while (node) {
-        Epoch& nodeEpoch = (*node)[i];
-        locklessCheckEq(nodeEpoch.count, 0, gRcu.log);
+        Epoch& nodeEpoch = node->get()[epoch];
+        locklessCheckEq(nodeEpoch.count, 0ULL, gRcu.log);
 
         execute(nodeEpoch.deferList);
 

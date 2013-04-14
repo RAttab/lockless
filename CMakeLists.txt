@@ -59,8 +59,13 @@ install(
     DESTINATION
     include/lockless)
 
-add_library(lockless_dbg SHARED src/log.cpp src/check.cpp)
-install(TARGETS lockless_dbg DESTINATION lib)
+add_library(
+    lockless
+    SHARED
+    src/log.cpp src/check.cpp
+    src/grcu.cpp)
+
+install(TARGETS lockless DESTINATION lib)
 
 
 #------------------------------------------------------------------------------#
@@ -69,7 +74,7 @@ install(TARGETS lockless_dbg DESTINATION lib)
 
 function(lockless_test name)
     add_executable(${name}_test tests/${name}_test.cpp)
-    target_link_libraries(${name}_test lockless_dbg boost_unit_test_framework)
+    target_link_libraries(${name}_test lockless boost_unit_test_framework)
     add_test(${name} bin/${name}_test)
 endfunction()
 
