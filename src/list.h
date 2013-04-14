@@ -170,7 +170,7 @@ struct List
         This op empties out the target list in a single atomic op and inserts
         them into our list using the push(Node*).
      */
-    void push(List<Node>&& other)
+    void transfer(List<T>& other)
     {
         if (other.empty()) return;
         push(other.head.exchange(nullptr));
