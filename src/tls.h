@@ -10,6 +10,7 @@
 
 #include <pthread.h>
 #include <functional>
+#include <cassert>
 
 namespace lockless {
 
@@ -26,11 +27,32 @@ namespace lockless {
 /* TLS                                                                        */
 /******************************************************************************/
 
-/**
+/** Thread local storage that provides both a constructor and destructor
+    callback.
 
-   \todo Need to make sure that this is actually faster then a straight up
-   pthread_getspecific and pthread_setspecific. If that's not the case then we
-   should just wrap these functions.
+    The Tag template parameter is used to force seperate static TLS storage to
+    be initialized if two instances of the Tls template are created with for the
+    same type. For Example:
+
+        Tls<size_t, int> tls1;
+        tls1 = 10;
+
+        struct Tag;
+        Tls<size_t, Tag> tls2;
+        tls2 = 20;
+
+        Tls<size_t, int> tls3;
+        tls3 = 30;
+
+        assert(tls1 == tls3);
+        assert(tls2 == 20);
+
+    \todo The static storage sticks around even after the originating object
+    goes out of scope. We should probably create a list of all TLS storage
+    created by the object and destroyed them when we go out of scope.
+
+    \todo Need to make sure that using __thread is actually faster then a
+    straight up pthread tls. If that doesn't pan out just wrap pthread tls.
  */
 template<typename T, typename Tag>
 struct Tls
@@ -70,6 +92,12 @@ struct Tls
         return *this;
     }
 
+    void reset()
+    {
+        if (!value) return;
+        destructor(static_cast<Fn*>(pthread_getspecific(key)));
+    }
+
 private:
 
     void init() const
@@ -82,18 +110,23 @@ private:
         pthread_setspecific(key, new Fn(destructFn));
     }
 
-    Fn constructFn;
-    Fn destructFn;
-
     static void destructor(void* obj)
     {
-        Fn* destructFn = static_cast<Fn*>(obj);
+        destructor(static_cast<Fn*>(obj));
+    }
 
+    static void destructor(Fn* destructFn)
+    {
+        assert(destructFn);
         if (*destructFn) (*destructFn)(*value);
-        delete value;
 
         pthread_key_delete(key);
+        delete value;
+        value = nullptr;
     }
+
+    Fn constructFn;
+    Fn destructFn;
 
     static LOCKLESS_TLS T* value;
     static LOCKLESS_TLS pthread_key_t key;

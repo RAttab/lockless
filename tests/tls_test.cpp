@@ -43,7 +43,7 @@ BOOST_AUTO_TEST_CASE(test_single_tls)
 {
     enum { Threads = 10 };
 
-    struct Test0 {};
+    struct Test0;
     Tls<size_t, Test0> tls;
 
     tls = -1ULL;
@@ -84,7 +84,7 @@ BOOST_AUTO_TEST_CASE(test_single_tls_cons)
         count.destructs++;
     };
 
-    struct Test1 {};
+    struct Test1;
     Tls<size_t, Test1> tls(construct, destruct);
     locklessCheckEq(count.constructs.load(), 0ULL, NullLog);
 
