@@ -27,8 +27,15 @@ struct Lock
 
     void lock()
     {
-        size_t oldVal = 0;
-        while(!val.compare_exchange_weak(oldVal, 1)) oldVal = 0;
+        size_t oldVal = val;
+        while(!oldVal && val.compare_exchange_weak(oldVal, 1))
+            oldVal = val;
+    }
+
+    bool tryLock()
+    {
+        size_t oldVal = val;
+        return !oldVal && val.compare_exchange_weak(oldVal, 1);
     }
 
     void unlock() { val.store(0); }
@@ -38,6 +45,68 @@ private:
 };
 
 
+/******************************************************************************/
+/* LOCK GUARD                                                                 */
+/******************************************************************************/
+
+template<typename Lock>
+struct LockGuard
+{
+    LockGuard(Lock& lock) : pLock(&lock)
+    {
+        pLock->lock();
+    }
+
+    ~LockGuard()
+    {
+        release();
+    }
+
+    void release()
+    {
+        if (!pLock) return;
+        pLock->unlock();
+        pLock = nullptr;
+    }
+
+private:
+    Lock* pLock;
+};
+
+
+/******************************************************************************/
+/* TRY LOCK GUARD                                                             */
+/******************************************************************************/
+
+
+template<typename Lock>
+struct TryLockGuard
+{
+    TryLockGuard(Lock& lock) :
+        pLock(&lock),
+        locked(pLock->tryLock())
+    {}
+
+    ~TryLockGuard()
+    {
+        release();
+    }
+
+    void release()
+    {
+        if (!pLock) return;
+        if (locked) pLock->unlock();
+        pLock->unlock();
+        pLock = nullptr;
+        locked = false;
+    }
+
+    operator bool() const { return locked; }
+
+private:
+    Lock* pLock;
+    bool locked;
+};
 
 } // lockless
 
