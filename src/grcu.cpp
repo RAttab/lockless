@@ -77,7 +77,7 @@ void destructTls(ListNode<Epochs>& node)
 }
 
 // Direct access to a node for a given thread.
-Tls<ListNode<Epochs> > nodeTls(&constructTls, &destructTls);
+Tls<ListNode<Epochs>, GlobalRcuImpl> nodeTls(&constructTls, &destructTls);
 
 Epochs& getTls() { return nodeTls.get(); }
 

@@ -32,7 +32,7 @@ namespace lockless {
    pthread_getspecific and pthread_setspecific. If that's not the case then we
    should just wrap these functions.
  */
-template<typename T>
+template<typename T, typename Tag>
 struct Tls
 {
     typedef std::function<void(T&)> Fn;
@@ -57,6 +57,19 @@ struct Tls
     operator T& () { return get(); }
     operator const T& () const { return get(); }
 
+    template<typename TT>
+    void set(TT&& other)
+    {
+        get() = std::forward<TT>(other);
+    }
+
+    template<typename TT>
+    Tls<T, Tag>& operator= (TT&& other)
+    {
+        set(std::forward<TT>(other));
+        return *this;
+    }
+
 private:
 
     void init() const
@@ -74,7 +87,7 @@ private:
 
     static void destructor(void* obj)
     {
-        Tls<T>* this_ = static_cast<Tls<T>*>(obj);
+        Tls<T, Tag>* this_ = static_cast<Tls<T, Tag>*>(obj);
 
         if (this_->destructFn) this_->destructFn(this_->get());
         delete this_->value;
@@ -86,11 +99,11 @@ private:
     static LOCKLESS_TLS pthread_key_t key;
 };
 
-template<typename T>
-LOCKLESS_TLS T* Tls<T>::value = nullptr;
+template<typename T, typename Tag>
+LOCKLESS_TLS T* Tls<T, Tag>::value = nullptr;
 
-template<typename T>
-LOCKLESS_TLS pthread_key_t Tls<T>::key;
+template<typename T, typename Tag>
+LOCKLESS_TLS pthread_key_t Tls<T, Tag>::key;
 
 } // lockless
 
