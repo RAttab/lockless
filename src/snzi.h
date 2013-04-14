@@ -127,9 +127,37 @@ private:
     typedef alignas(CacheLine) std::atomic<size_t> Counter;
     std::array<Counter, Nodes> tree;
 
+public:
     DebuggingLog<1024, DebugSnzi>::type log;
 };
 
+
+/******************************************************************************/
+/* NULL SNZI                                                                  */
+/******************************************************************************/
+
+template<>
+struct Snzi<1, 1>
+{
+    Snzi() : counter(0) {}
+
+    bool test() const { return counter.load(); }
+
+    /** Returns true if the state changed from 0 to 1. */
+    bool inc() { return counter.fetch_add(1) == 0; }
+
+    /** Returns true if the state changed from 1 to 0. */
+    bool dec() { return counter.fetch_dec(1) == 1; }
+
+private:
+
+    std::atomic<size_t> counter;
+
+public:
+    NullLog log;
+};
+
+typedef Snzi<1,1> NullSnzi;
 
 } // lockless
 
