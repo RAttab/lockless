@@ -79,7 +79,7 @@ private:
 
         // use pthread TLS for the destructFn.
         pthread_key_create(&key, &destructor);
-        pthread_setspecific(key, this);
+        pthread_setspecific(key, new Fn(destructFn));
     }
 
     Fn constructFn;
@@ -87,10 +87,10 @@ private:
 
     static void destructor(void* obj)
     {
-        Tls<T, Tag>* this_ = static_cast<Tls<T, Tag>*>(obj);
+        Fn* destructFn = static_cast<Fn*>(obj);
 
-        if (this_->destructFn) this_->destructFn(this_->get());
-        delete this_->value;
+        if (*destructFn) (*destructFn)(*value);
+        delete value;
 
         pthread_key_delete(key);
     }

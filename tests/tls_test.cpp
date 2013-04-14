@@ -84,17 +84,11 @@ BOOST_AUTO_TEST_CASE(test_single_tls_cons)
         count.destructs++;
     };
 
-    atomic_thread_fence(memory_order_seq_cst);
-
     struct Test1 {};
     Tls<size_t, Test1> tls(construct, destruct);
     locklessCheckEq(count.constructs.load(), 0ULL, NullLog);
-    locklessCheckEq(tls.value, nullptr, NullLog);
 
     tls = -1ULL;
-    atomic_thread_fence(memory_order_seq_cst);
-
-    locklessCheckNe(tls.value, nullptr, NullLog);
     locklessCheckEq(count.constructs.load(), 1ULL, NullLog);
 
 
@@ -128,3 +122,5 @@ BOOST_AUTO_TEST_CASE(test_single_tls_cons)
     locklessCheckEq(count.constructs.load(), Threads + 1ULL, NullLog);
     locklessCheckEq(count.destructs.load(), size_t(Threads), NullLog);
 }
+
+
