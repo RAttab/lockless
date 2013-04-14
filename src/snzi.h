@@ -136,8 +136,8 @@ public:
 /* NULL SNZI                                                                  */
 /******************************************************************************/
 
-template<>
-struct Snzi<1, 1>
+template<typename Arity = 1>
+struct Snzi<1, Arity>
 {
     Snzi() : counter(0) {}
 
