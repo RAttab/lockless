@@ -70,7 +70,7 @@ void check(const std::string& str, LogT& log, const CheckContext& ctx)
     // \todo could do an exception variant as well.
 }
 
-std::string checkStr(const char* pred)
+inline std::string checkStr(const char* pred)
 {
     std::array<char, 256> buffer;
     snprintf(buffer.data(), buffer.size(), "{ %s }", pred);

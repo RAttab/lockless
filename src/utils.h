@@ -54,6 +54,12 @@ std::string to_string(T* p)
     return std::to_string(reinterpret_cast<void*>(p));
 }
 
+template<typename T>
+std::string to_string(const T* p)
+{
+    return std::to_string(reinterpret_cast<const void*>(p));
+}
+
 template<typename First, typename Second>
 std::string to_string(const std::pair<First, Second>& p)
 {
