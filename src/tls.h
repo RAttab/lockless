@@ -8,6 +8,9 @@
 #ifndef __lockless__tls_h__
 #define __lockless__tls_h__
 
+#include <pthread.h>
+#include <functional>
+
 namespace lockless {
 
 
