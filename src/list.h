@@ -149,19 +149,6 @@ struct List
     List(const List&) = delete;
     List& operator=(const List&) = delete;
 
-    List(List&& other) :
-        head(other.head.exchange(nullptr))
-    {}
-
-    List& operator=(List&& other)
-    {
-        if (&other == this) return *this;
-
-        head = other.head.exchange(nullptr);
-
-        return *this;
-    }
-
     bool empty() const { return head == nullptr; }
 
     void push(Node* node)
@@ -176,6 +163,17 @@ struct List
         do {
             lastNode->next(next);
         } while (!head.compare_exchange_weak(next, node));
+    }
+
+    /** Transfers all the elements of the given list to the head of our list.
+
+        This op empties out the target list in a single atomic op and inserts
+        them into our list using the push(Node*).
+     */
+    void push(List<Node>&& other)
+    {
+        if (other.empty()) return;
+        push(other.head.exchange(nullptr));
     }
 
     Node* pop()
