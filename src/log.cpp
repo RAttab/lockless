@@ -7,6 +7,7 @@
 */
 
 #include "log.h"
+#include "tls.h"
 
 using namespace std;
 
