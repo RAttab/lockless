@@ -13,6 +13,7 @@
 #include <future>
 #include <thread>
 #include <random>
+#include <array>
 
 
 namespace lockless {

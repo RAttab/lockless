@@ -84,6 +84,7 @@ lockless_test(log)
 lockless_test(log_para)
 
 lockless_test(tls)
+lockless_test(tls_perf)
 
 lockless_test(list)
 lockless_test(list_para)
