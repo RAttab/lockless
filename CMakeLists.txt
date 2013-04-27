@@ -20,6 +20,7 @@ add_definitions("-std=c++11 -Wall -Wextra -Werror -pedantic -g -O4")
 include_directories("${PROJECT_SOURCE_DIR}/src")
 
 link_libraries(rt)
+link_libraries(pthread)
 
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)

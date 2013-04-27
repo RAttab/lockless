@@ -19,6 +19,7 @@
 #include <boost/test/unit_test.hpp>
 #include <random>
 #include <vector>
+#include <set>
 
 
 using namespace std;
