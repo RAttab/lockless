@@ -125,8 +125,7 @@ enter()
     size_t epoch = gRcu.epoch;
     getTls()[epoch & 1].count++;
 
-    // Prevents reads from being taking place before we increment the epoch
-    // counter.
+    // Prevents reads from taking place before we increment the epoch counter.
     atomic_thread_fence(memory_order_acquire);
 
     return epoch;

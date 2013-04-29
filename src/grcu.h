@@ -18,9 +18,7 @@
 
 #include "rcu.h"
 #include "list.h"
-#include "debug.h"
 
-#include <atomic>
 #include <functional>
 
 namespace lockless {
