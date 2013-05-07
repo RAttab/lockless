@@ -43,10 +43,10 @@ void doDeferThread(Context& ctx, unsigned itCount)
 
 int main(int argc, char** argv)
 {
-    unsigned thCount = 1;
+    unsigned thCount = 4;
     if (argc > 1) thCount = stoul(string(argv[1]));
 
-    size_t itCount = 100000;
+    size_t itCount = 10000;
     if (argc > 2) itCount = stoull(string(argv[2]));
 
     bool csvOutput = false;
