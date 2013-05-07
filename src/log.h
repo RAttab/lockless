@@ -222,6 +222,10 @@ struct Log<0>
     void log(LogType, Title&&, const std::string&, Args&&...)
     {}
 
+    template<typename Title, typename... Args>
+    void log(LogType, Title&&, const char*, Args&&...)
+    {}
+
     std::vector<LogEntry> dump() { return {}; }
 
     std::function< std::vector<LogEntry>() > dumpFn()
