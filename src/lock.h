@@ -28,9 +28,8 @@ struct Lock
 
     void lock()
     {
-        size_t oldVal = val;
-        while(oldVal || !val.compare_exchange_weak(oldVal, 1))
-            oldVal = val;
+        size_t oldVal;
+        while((oldVal = val) || !val.compare_exchange_weak(oldVal, 1));
     }
 
     bool tryLock()
