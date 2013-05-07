@@ -12,6 +12,7 @@
 #ifndef __lockless__lock_h__
 #define __lockless__lock_h__
 
+#include <cstddef>
 #include <atomic>
 
 namespace lockless {
@@ -28,7 +29,7 @@ struct Lock
     void lock()
     {
         size_t oldVal = val;
-        while(!oldVal && val.compare_exchange_weak(oldVal, 1))
+        while(oldVal || !val.compare_exchange_weak(oldVal, 1))
             oldVal = val;
     }
 
