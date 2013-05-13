@@ -37,6 +37,26 @@ struct MallocDeleter
     }
 };
 
+
+/******************************************************************************/
+/* FORMAT                                                                     */
+/******************************************************************************/
+
+template<typename... Args>
+std::string format(const std::string& pattern, Args&&... args)
+{
+    return format(pattern.c_str(), std::forward<Args>(args)...);
+}
+
+template<typename... Args>
+std::string format(const char* pattern, Args&&... args)
+{
+    std::array<char, 256> buffer;
+    size_t chars = snprintf(buffer.data(), buffer.size(), pattern, args...);
+    return std::string(buffer.data(), chars);
+}
+
+
 } // lockless
 
 
