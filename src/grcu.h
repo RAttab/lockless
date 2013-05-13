@@ -46,6 +46,8 @@ struct GlobalRcu
 
     bool gc();
 
+
+    std::string print() const;
     LogAggregator log();
 
 private:

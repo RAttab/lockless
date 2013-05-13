@@ -21,6 +21,8 @@ namespace lockless {
 
 namespace {
 
+bool gcImpl();
+
 /******************************************************************************/
 /* DATA STRUCTS                                                               */
 /******************************************************************************/
@@ -72,8 +74,27 @@ void constructTls(ListNode<Epochs>& node)
 
 void destructTls(ListNode<Epochs>& node)
 {
-    // It's simpler if only the gc thread can remove nodes from the list.
-    node.mark();
+    // Ensures that we don't race with the destruction of the gRcu lock.
+    LockGuard<Lock> guard(gRcu.lock);
+
+    // Everything should have been cleaned up by the gRcu destructor. Bail.
+    if (!gRcu.refCount) {
+        for (size_t i = 0; i < 2; ++i)
+            locklessCheckEq(node.get()[i].count, 0ULL, gRcu.log);
+        return;
+    }
+
+    // Move all leftover defer work to the gcDump node which will be gc-ed on
+    // the next successful gc pass for that epoch.
+    for (size_t i = 0; i < 2; ++i) {
+        Epoch& nodeEpoch = node.get()[i];
+        locklessCheckEq(nodeEpoch.count, 0ULL, gRcu.log);
+
+        Epoch& gcEpoch = gRcu.gcDump->get()[i];
+        gcEpoch.deferList.take(nodeEpoch.deferList);
+    }
+
+    gRcu.threadList.remove(&node);
 }
 
 // Direct access to a node for a given thread.
@@ -99,8 +120,6 @@ GlobalRcu()
     gRcu.refCount++;
     if (gRcu.refCount > 1) return;
 
-    locklessCheck(gRcu.threadList.empty(), gRcu.log);
-
     gRcu.epoch = 1;
     gRcu.gcDump = new ListNode<Epochs>();
     gRcu.threadList.push(gRcu.gcDump);
@@ -114,7 +133,17 @@ GlobalRcu::
     gRcu.refCount--;
     if (gRcu.refCount > 0) return;
 
-    locklessCheck(gRcu.threadList.empty(), gRcu.log);
+    // Run any leftover defered work in both epochs.
+    size_t epoch = gRcu.epoch;
+    gcImpl();
+    gcImpl();
+
+    // Executing gc() twice should increment the epoch counter twice. If this
+    // check fails then there's still a thread in one of the epochs.
+    locklessCheckEq(epoch + 2, gRcu.epoch, gRcu.log);
+
+    bool removed = gRcu.threadList.remove(gRcu.gcDump);
+    locklessCheck(removed, gRcu.log);
     delete gRcu.gcDump;
 }
 
@@ -153,35 +182,6 @@ defer(ListNode<DeferFn>* node)
 
 namespace {
 
-ListNode<Epochs>*
-deleteMarkedNode(
-        ListNode<Epochs>* node,
-        ListNode<Epochs>* prev)
-{
-    // Move all leftover defer work to the gcDump node which will be gc-ed on
-    // the next successful gc pass for that epoch.
-    for (size_t i = 0; i < 2; ++i) {
-        Epoch& nodeEpoch = node->get()[i];
-        locklessCheckEq(nodeEpoch.count, 0ULL, gRcu.log);
-
-        Epoch& gcEpoch = gRcu.gcDump->get()[i];
-        gcEpoch.deferList.take(nodeEpoch.deferList);
-    }
-
-    auto* next = node->next();
-
-    // If we're removing at the head, we need to use a safe approach in
-    // case a new node was pushed while we were not looking.
-    if (!prev) gRcu.threadList.remove(node);
-
-    // Otherwise, we can safely remove it the simple way because only
-    // one thread can ever be crawling the list.
-    else prev->next(next);
-
-    delete node;
-    return next;
-}
-
 void execute(List<GlobalRcu::DeferFn>& target)
 {
     auto* node = target.head.exchange(nullptr);
@@ -196,36 +196,19 @@ void execute(List<GlobalRcu::DeferFn>& target)
     }
 }
 
-} // namespace anonymous
-
-bool
-GlobalRcu::
-gc()
+bool gcImpl()
 {
-    // Pointless to have more then 2 threads gc-ing and limitting to one
-    // significantly simplifies the algo.
-    TryLockGuard<Lock> guard(gRcu.lock);
-    if (!guard) return false;
-
     size_t epoch = (gRcu.epoch - 1) & 1;
 
     ListNode<Epochs>* node = gRcu.threadList.head;
-    ListNode<Epochs>* prev = nullptr;
     locklessCheckNe(node, nullptr, gRcu.log);
 
     // Do an initial pass over the list to see if we can do a gc pass.
     while (node) {
 
-        // Dead node, get rid of it.
-        if (node->isMarked()) {
-            node = deleteMarkedNode(node, prev);
-            continue;
-        }
-
         // Someone's still in the epoch so we can't gc anything; just bail.
         if (node->get()[epoch].count) return false;
 
-        prev = node;
         node = node->next();
     }
 
@@ -248,6 +231,48 @@ gc()
 
     gRcu.epoch++;
     return true;
+}
+
+} // namespace anonymous
+
+bool
+GlobalRcu::
+gc()
+{
+    // Pointless to have more then 2 threads gc-ing and limitting to one
+    // significantly simplifies the algo.
+    TryLockGuard<Lock> guard(gRcu.lock);
+    if (!guard) return false;
+
+    return gcImpl();
+}
+
+string
+GlobalRcu::
+print() const
+{
+    size_t epochsTotal[2] = { 0, 0 };
+
+    string line;
+    ListNode<Epochs>* node = gRcu.threadList.head;
+
+    while (node) {
+        Epochs& epochs = node->get();
+        line += format("\tptr=%10p, next=%10p, count=[ %ld, %ld ]\n",
+                node, node->next(), epochs[0].count, epochs[1].count);
+
+        for (size_t i = 0; i < 2; ++i)
+            epochsTotal[i] += epochs[i].count;
+
+        node = node->next();
+    }
+
+    string head = format(
+            "head=%p, dump=%p, refCount=%ld, epoch=%ld, count=[ %ld, %ld ]\n",
+            gRcu.threadList.head.load(), gRcu.gcDump, gRcu.refCount, gRcu.epoch,
+            epochsTotal[0], epochsTotal[1]);
+
+    return head + line;
 }
 
 
