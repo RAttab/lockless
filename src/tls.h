@@ -50,9 +50,6 @@ namespace lockless {
     \todo The static storage sticks around even after the originating object
     goes out of scope. We should probably create a list of all TLS storage
     created by the object and destroyed them when we go out of scope.
-
-    \todo Need to make sure that using __thread is actually faster then a
-    straight up pthread tls. If that doesn't pan out just wrap pthread tls.
  */
 template<typename T, typename Tag>
 struct Tls
