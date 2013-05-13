@@ -43,7 +43,7 @@ BOOST_AUTO_TEST_CASE(simpleTest)
 
         auto doThread = [&] (unsigned id) {
             for (size_t i = 0; i < Iterations; ++i) {
-                RcuGuard guard(rcu);
+                RcuGuard<Rcu> guard(rcu);
                 rcu.defer([&, id] { counters[id]++; });
             }
         };
@@ -88,7 +88,7 @@ BOOST_AUTO_TEST_CASE(complexTest)
 
     auto doWriteThread = [&] (unsigned) {
         for (size_t it = 0; it < Iterations; ++it) {
-            RcuGuard guard(rcu);
+            RcuGuard<Rcu> guard(rcu);
 
             for (size_t index = Slots; index > 0; --index) {
                 Obj* obj = slots[index - 1].exchange(new Obj());
@@ -101,7 +101,7 @@ BOOST_AUTO_TEST_CASE(complexTest)
 
     auto doReadThread = [&] (unsigned) {
         do {
-            RcuGuard guard(rcu);
+            RcuGuard<Rcu> guard(rcu);
 
             for (size_t index = 0; index < Slots; ++index) {
                 Obj* obj = slots[index].load();

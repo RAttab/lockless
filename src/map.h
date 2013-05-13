@@ -82,7 +82,7 @@ public:
 
     size_t capacity() const
     {
-        RcuGuard guard(rcu);
+        RcuGuard<Rcu> guard(rcu);
         return newestTable()->capacity;
     }
 
@@ -97,7 +97,7 @@ public:
     {
         log.log(LogMap, "resize", "capacity=%ld", capacity);
 
-        RcuGuard guard(rcu);
+        RcuGuard<Rcu> guard(rcu);
         resizeImpl(table.load(), adjustCapacity(capacity));
     }
 
@@ -112,7 +112,7 @@ public:
     {
         log.log(LogMap, "find", "key=%s", std::to_string(key).c_str());
 
-        RcuGuard guard(rcu);
+        RcuGuard<Rcu> guard(rcu);
         return findImpl(table.load(), hashFn(key), key);
     }
 
@@ -128,7 +128,7 @@ public:
         log.log(LogMap, "insert", "key=%s, value=%s",
                 std::to_string(key).c_str(), std::to_string(value).c_str());
 
-        RcuGuard guard(rcu);
+        RcuGuard<Rcu> guard(rcu);
 
         size_t hash = hashFn(key);
         KeyAtom keyAtom = KeyAtomizer::alloc(key);
@@ -155,7 +155,7 @@ public:
                 std::to_string(expected).c_str(),
                 std::to_string(desired).c_str());
 
-        RcuGuard guard(rcu);
+        RcuGuard<Rcu> guard(rcu);
 
         size_t hash = hashFn(key);
         ValueAtom valueAtom = ValueAtomizer::alloc(desired);
@@ -175,7 +175,7 @@ public:
     {
         log.log(LogMap, "remove", "key=%s", std::to_string(key).c_str());
 
-        RcuGuard guard(rcu);
+        RcuGuard<Rcu> guard(rcu);
 
         auto result = removeImpl(table.load(), hashFn(key), key);
         if (result.first) elem--;

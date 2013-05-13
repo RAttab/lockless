@@ -8,6 +8,7 @@
 #ifndef __lockless__rcu_h__
 #define __lockless__rcu_h__
 
+#include "rcu_guard.h"
 #include "debug.h"
 #include "log.h"
 #include "check.h"
@@ -239,31 +240,6 @@ private:
 public:
 
     DebuggingLog<10240, DebugRcu>::type log;
-
-};
-
-
-
-/******************************************************************************/
-/* RCU GUARD                                                                  */
-/******************************************************************************/
-
-/* Blah
-
- */
-struct RcuGuard
-{
-    RcuGuard(Rcu& rcu) :
-        rcu(rcu),
-        epoch(rcu.enter())
-    {}
-
-    ~RcuGuard() { rcu.exit(epoch); }
-
-private:
-
-    Rcu& rcu;
-    size_t epoch;
 
 };
 

@@ -16,7 +16,7 @@
 #ifndef __lockless__grcu_h__
 #define __lockless__grcu_h__
 
-#include "rcu.h"
+#include "rcu_guard.h"
 #include "list.h"
 
 #include <functional>

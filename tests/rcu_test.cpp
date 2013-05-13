@@ -27,7 +27,7 @@ using namespace lockless;
 BOOST_AUTO_TEST_CASE(smokeTest)
 {
     Rcu rcu;
-    RcuGuard guard{rcu};
+    RcuGuard<Rcu> guard{rcu};
 }
 
 

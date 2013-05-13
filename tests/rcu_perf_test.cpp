@@ -27,7 +27,7 @@ struct Context
 void doEnterExitThread(Context& ctx, unsigned itCount)
 {
     for (size_t it = 0; it < itCount; ++it)
-        RcuGuard guard(ctx.rcu);
+        RcuGuard<Rcu> guard(ctx.rcu);
 }
 
 void doDeferThread(Context& ctx, unsigned itCount)

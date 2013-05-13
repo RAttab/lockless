@@ -66,7 +66,7 @@ struct Queue
     template<typename T2>
     void push(T2&& value)
     {
-        RcuGuard guard(rcu);
+        RcuGuard<Rcu> guard(rcu);
 
         Entry* entry = new Entry(std::forward<T2>(value));
 
@@ -110,7 +110,7 @@ struct Queue
      */
     std::pair<bool, T> peek()
     {
-        RcuGuard guard(rcu);
+        RcuGuard<Rcu> guard(rcu);
 
         while (true) {
             Entry* oldHead = head.load();
@@ -150,7 +150,7 @@ struct Queue
      */
     std::pair<bool, T> pop()
     {
-        RcuGuard guard(rcu);
+        RcuGuard<Rcu> guard(rcu);
 
         log.log(LogQueue, "pop-0", "");
 
