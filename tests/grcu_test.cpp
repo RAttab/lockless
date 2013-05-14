@@ -16,6 +16,7 @@
 
 #include <boost/test/unit_test.hpp>
 #include <iostream>
+#include <stack>
 
 using namespace std;
 using namespace lockless;
@@ -76,7 +77,92 @@ BOOST_AUTO_TEST_CASE(epochTest)
     }
 }
 
-void enterExit(GlobalRcu& rcu)
+
+/******************************************************************************/
+/* RCU THREAD                                                                 */
+/******************************************************************************/
+
+/** Since GlobalRcu's implementation heavily relies on TLS this util creates a
+    new TLS node and performs op that node.
+ */
+struct RcuThread
 {
-    thread([&] { RcuGuard<GlobalRcu> guard(rcu); }).join();
+    RcuThread() : th([=] { this->run(); }), action(0) {}
+
+    void run()
+    {
+        unique_lock<mutex> guard(lock);
+        while(true) {
+            while (!action) cvar.wait(guard);
+
+            if (action == 1) break;
+            if (action == 2) epochs.push(rcu.enter());
+            if (action == 3) {
+                rcu.exit(epochs.top());
+                epochs.pop();
+            }
+            if (action == 4) rcu.defer(deferFn);
+
+            action = 0;
+            cvar.notify_one();
+        }
+
+        action = 0;
+        cvar.notify_one();
+    }
+
+    void doEvent(int ev)
+    {
+        unique_lock<mutex> guard(lock);
+        action = ev;
+        cvar.notify_one();
+        while (action) cvar.wait(guard);
+    }
+
+    void enter() { doEvent(2); }
+    void exit() { doEvent(3); }
+    void defer(const function<void()>& fn)
+    {
+        deferFn = fn;
+        doEvent(4);
+    }
+    void die()
+    {
+        doEvent(1);
+        th.join();
+    }
+
+    thread th;
+    GlobalRcu rcu;
+
+    mutex lock;
+    condition_variable cvar;
+    atomic<int> action;
+    stack<size_t> epochs;
+    function<void()> deferFn;
+};
+
+BOOST_AUTO_TEST_CASE(threadedSmokeTest)
+{
+    cerr << fmtTitle("threadedSmokeTest", '=') << endl;
+
+    GlobalRcu rcu;
+    RcuThread th;
+    th.enter();
+    th.defer([] { cerr << "BOO!" << endl; });
+    th.defer([] { cerr << "BLAH!" << endl; });
+    th.exit();
+    cerr << rcu.print() << endl;
+    th.die();
 }
+
+
+BOOST_AUTO_TEST_CASE(threadedBasicsTest)
+{
+    cerr << fmtTitle("threadedBasicsTest", '=') << endl;
+
+    for (int i = 0; i < 5; ++i) {
+
+    }
+}
+

@@ -258,8 +258,11 @@ print() const
 
     while (node) {
         Epochs& epochs = node->get();
-        line += format("\tptr=%10p, next=%10p, count=[ %ld, %ld ]\n",
-                node, node->next(), epochs[0].count, epochs[1].count);
+        line += format(
+                "  ptr=%10p, next=%10p, count=[ %ld, %ld ], defer=[ %10p, %10p ]\n",
+                node, node->next(), epochs[0].count, epochs[1].count,
+                epochs[0].deferList.head.load(),
+                epochs[1].deferList.head.load());
 
         for (size_t i = 0; i < 2; ++i)
             epochsTotal[i] += epochs[i].count;
