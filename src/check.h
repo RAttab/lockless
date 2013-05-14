@@ -50,7 +50,7 @@ extern Lock checkDumpLock;
 } // namespace details
 
 template<typename LogT>
-void check(const std::string& str, LogT& log, const CheckContext& ctx)
+void check(const std::string& str, LogT&& log, const CheckContext& ctx)
 {
     // While this is not entirely safe, we're about to abort anyway...
     if (CheckAbort) details::checkDumpLock.lock();
