@@ -112,9 +112,7 @@ Epochs& getTls() { return nodeTls.get(); }
 GlobalRcu::
 GlobalRcu()
 {
-    // Doing this lockless would be a pain and would be purty useless. We're
-    // talking about speculatively spinnning up threads to then destroy them
-    // when the cas fails.
+    // Doing this lockless would be a pain and would be purty useless.
     LockGuard<Lock> guard(gRcu.lock);
 
     gRcu.refCount++;
@@ -182,9 +180,9 @@ defer(ListNode<DeferFn>* node)
 
 namespace {
 
-void execute(List<GlobalRcu::DeferFn>& target)
+void execute(List<GlobalRcu::DeferFn>& deferList)
 {
-    auto* node = target.head.exchange(nullptr);
+    auto* node = deferList.head.exchange(nullptr);
 
     while (node) {
         // exec the defered work.
@@ -205,24 +203,19 @@ bool gcImpl()
 
     // Do an initial pass over the list to see if we can do a gc pass.
     while (node) {
-
         // Someone's still in the epoch so we can't gc anything; just bail.
         if (node->get()[epoch].count) return false;
 
         node = node->next();
     }
 
-
+    // Our epoch has been fully vacated so time to execute defered work.
     node = gRcu.threadList.head;
-    locklessCheckNe(node, nullptr, gRcu.log);
-
-    // It's safe to start modifying the gc lists so start doing just that.
     while (node) {
         Epoch& nodeEpoch = node->get()[epoch];
         locklessCheckEq(nodeEpoch.count, 0ULL, gRcu.log);
 
         execute(nodeEpoch.deferList);
-
         node = node->next();
     }
 
