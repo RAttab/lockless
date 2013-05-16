@@ -16,12 +16,12 @@
 #include <pthread.h>
 
 using namespace std;
-
-namespace lockless {
+using namespace lockless;
 
 namespace {
 
 bool gc();
+string print();
 
 /******************************************************************************/
 /* DATA STRUCTS                                                               */
@@ -47,6 +47,11 @@ struct Epochs : public array<Epoch, 2>
     }
 };
 
+
+/******************************************************************************/
+/* GRCU                                                                       */
+/******************************************************************************/
+
 struct GlobalRcuImpl
 {
     GlobalRcuImpl() : lock(), refCount(0)  {}
@@ -61,6 +66,54 @@ struct GlobalRcuImpl
 
     DebuggingLog<10240, DebugRcu>::type log;
 } gRcu;
+
+
+void execute(List<GlobalRcu::DeferFn>& deferList)
+{
+    auto* node = deferList.head.exchange(nullptr);
+
+    while (node) {
+        // exec the defered work.
+        node->get()();
+
+        auto* next = node->next();
+        delete node;
+        node = next;
+    }
+}
+
+bool gc()
+{
+    size_t epoch = (gRcu.epoch - 1) & 1;
+
+    ListNode<Epochs>* node = gRcu.threadList.head;
+    locklessCheckNe(node, nullptr, gRcu.log);
+
+    // Do an initial pass over the list to see if we can do a gc pass.
+    while (node) {
+        // Someone's still in the epoch so we can't gc anything; just bail.
+        if (node->get()[epoch].count) return false;
+
+        node = node->next();
+    }
+
+    // Our epoch has been fully vacated so time to execute defered work.
+    node = gRcu.threadList.head;
+    while (node) {
+        Epoch& nodeEpoch = node->get()[epoch];
+        locklessCheckEq(nodeEpoch.count, 0ULL, gRcu.log);
+
+        execute(nodeEpoch.deferList);
+        node = node->next();
+    }
+
+    // Complete all defered work before moving the epoch forward.
+    atomic_thread_fence(memory_order_seq_cst);
+
+    gRcu.epoch++;
+    return true;
+}
+
 
 string print()
 {
@@ -139,6 +192,8 @@ Epochs& getTls() { return nodeTls.get(); }
 /* GLOBAL RCU                                                                 */
 /******************************************************************************/
 
+namespace lockless {
+
 GlobalRcu::
 GlobalRcu()
 {
@@ -163,8 +218,8 @@ GlobalRcu::
 
     // Run any leftover defered work in both epochs.
     size_t epoch = gRcu.epoch;
-    lockless::gc();
-    lockless::gc();
+    ::gc();
+    ::gc();
 
     // Executing gc() twice should increment the epoch counter twice. If this
     // check fails then there's still a thread in one of the epochs.
@@ -208,56 +263,6 @@ defer(ListNode<DeferFn>* node)
 }
 
 
-namespace {
-
-void execute(List<GlobalRcu::DeferFn>& deferList)
-{
-    auto* node = deferList.head.exchange(nullptr);
-
-    while (node) {
-        // exec the defered work.
-        node->get()();
-
-        auto* next = node->next();
-        delete node;
-        node = next;
-    }
-}
-
-bool gc()
-{
-    size_t epoch = (gRcu.epoch - 1) & 1;
-
-    ListNode<Epochs>* node = gRcu.threadList.head;
-    locklessCheckNe(node, nullptr, gRcu.log);
-
-    // Do an initial pass over the list to see if we can do a gc pass.
-    while (node) {
-        // Someone's still in the epoch so we can't gc anything; just bail.
-        if (node->get()[epoch].count) return false;
-
-        node = node->next();
-    }
-
-    // Our epoch has been fully vacated so time to execute defered work.
-    node = gRcu.threadList.head;
-    while (node) {
-        Epoch& nodeEpoch = node->get()[epoch];
-        locklessCheckEq(nodeEpoch.count, 0ULL, gRcu.log);
-
-        execute(nodeEpoch.deferList);
-        node = node->next();
-    }
-
-    // Complete all defered work before moving the epoch forward.
-    atomic_thread_fence(memory_order_seq_cst);
-
-    gRcu.epoch++;
-    return true;
-}
-
-} // namespace anonymous
-
 bool
 GlobalRcu::
 gc()
@@ -267,12 +272,15 @@ gc()
     TryLockGuard<Lock> guard(gRcu.lock);
     if (!guard) return false;
 
-    return lockless::gc();
+    return ::gc();
 }
 
 string
 GlobalRcu::
-print() const { return lockless::print(); }
+print() const
+{
+    return ::print();
+}
 
 LogAggregator
 GlobalRcu::
