@@ -16,7 +16,10 @@
 
 #include <boost/test/unit_test.hpp>
 #include <iostream>
+#include <random>
+#include <vector>
 #include <stack>
+#include <map>
 
 using namespace std;
 using namespace lockless;
@@ -323,4 +326,94 @@ BOOST_AUTO_TEST_CASE(threadedBasicsTest)
         cerr << fmtTitle("i, 0-0*, 0-0") << endl;
         cerr << rcu.print() << endl;
     }
+}
+
+// Randomly do stuff hoping to discover some weird edge case that I couldn't
+// think of.
+BOOST_AUTO_TEST_CASE(fuzzTest)
+{
+    cerr << fmtTitle("fuzzTest", '=') << endl;
+
+    enum { Rounds = 100000 };
+
+    map<size_t, size_t> expected;
+    map<size_t, size_t> counters;
+
+    {
+        mt19937_64 engine;
+        uniform_int_distribution<unsigned> actionRnd(0, 6);
+
+        vector<RcuThread*> actors;
+
+        auto getEpoch = [&] {
+            GlobalRcu rcu;
+            size_t epoch = rcu.enter();
+            rcu.exit(epoch);
+            return epoch;
+        };
+
+
+        for (size_t round = 0; round < Rounds; ++round) {
+            if (round % 1000 == 0)
+                cerr << "\r" << fmtValue(round) << " of " << fmtValue(Rounds);
+
+            unsigned action = actionRnd(engine);
+
+            if (actors.empty() || action == 0) {
+                actors.emplace_back(new RcuThread());
+                continue;
+            }
+
+            uniform_int_distribution<unsigned> actorRnd(0, actors.size() - 1);
+            unsigned actor = actorRnd(engine);
+
+            if (actors.size() > 5) {
+                while (actors[actor]->active())
+                    actors[actor]->exit();
+
+                auto pred = [] (RcuThread* actor) {
+                    if (actor->active()) return false;
+                    delete actor;
+                    return true;
+                };
+
+                actors.erase(
+                        remove_if(actors.begin(), actors.end(), pred),
+                        actors.end());
+                continue;
+            }
+
+            else if (action == 2)
+                actors[actor]->enter();
+
+            else if (action == 3) {
+                for (size_t i = 0; i < actors.size(); ++i) {
+                    int j = (actor + i) % actors.size();
+                    if (!actors[j]->active()) continue;
+
+                    actors[j]->exit();
+                    break;
+                }
+            }
+
+            else if (action == 4 && GlobalRcu().gc())
+                /* no-op */;
+
+            else {
+                size_t epoch = getEpoch();
+                actors[actor]->defer([&, epoch] { counters[epoch]++; });
+                expected[epoch]++;
+            }
+        }
+
+        cerr << "\nLastEpoch: " << getEpoch() << endl;
+
+        for (RcuThread* actor : actors) {
+            while (actor->active()) actor->exit();
+            delete actor;
+        }
+    }
+
+    for (const auto& exp: expected)
+        locklessCheckEq(counters[exp.first], exp.second, GlobalRcu().log());
 }
