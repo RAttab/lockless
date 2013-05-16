@@ -142,24 +142,14 @@ BOOST_AUTO_TEST_CASE(deferOnExit)
  */
 struct RcuThread
 {
-    RcuThread() :
-        th([=] { this->run(); }),
-        action(1)
-    {
-        unique_lock<mutex> guard(lock);
-        while (action) cvar.wait(guard);
-    }
+    RcuThread() : action(0), th([=] { this->run(); }) {}
     ~RcuThread() { die(); }
 
     void run()
     {
         GlobalRcu rcu;
-        stack<size_t> epochs;
 
         unique_lock<mutex> guard(lock);
-        action = 0;
-        cvar.notify_one();
-
         while (true) {
             while (!action) cvar.wait(guard);
 
@@ -201,11 +191,17 @@ struct RcuThread
         th.join();
     }
 
-    thread th;
+    size_t active() const { return epochs.size(); }
+
+    atomic<int> action;
+
     mutex lock;
     condition_variable cvar;
-    atomic<int> action;
+
     function<void()> deferFn;
+    stack<size_t> epochs;
+
+    thread th;
 };
 
 void enterExit()
