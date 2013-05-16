@@ -54,14 +54,15 @@ struct Epochs : public array<Epoch, 2>
 
 struct GlobalRcuImpl
 {
-    GlobalRcuImpl() : lock(), refCount(0)  {}
+    GlobalRcuImpl() : refCount(0)  {}
 
-    Lock lock;
+    Lock refLock;
     size_t refCount;
 
     size_t epoch;
-
     List<Epochs> threadList;
+
+    Lock gcLock;
     ListNode<Epochs>* gcDump; // Used to gather the defer list of dead threads.
 
     DebuggingLog<10240, DebugRcu>::type log;
@@ -157,7 +158,7 @@ void constructTls(ListNode<Epochs>& node)
 void destructTls(ListNode<Epochs>& node)
 {
     // Ensures that we don't race with the destruction of the gRcu lock.
-    LockGuard<Lock> guard(gRcu.lock);
+    LockGuard<Lock> guard(gRcu.refLock);
 
     if (!gRcu.refCount) {
         // Make sure everything was properly cleaned up by the GlobalRcu
@@ -198,7 +199,7 @@ GlobalRcu::
 GlobalRcu()
 {
     // Doing this lockless would be a pain and would be purty useless.
-    LockGuard<Lock> guard(gRcu.lock);
+    LockGuard<Lock> guard(gRcu.refLock);
 
     gRcu.refCount++;
     if (gRcu.refCount > 1) return;
@@ -211,7 +212,7 @@ GlobalRcu()
 GlobalRcu::
 ~GlobalRcu()
 {
-    LockGuard<Lock> guard(gRcu.lock);
+    LockGuard<Lock> guard(gRcu.refLock);
 
     gRcu.refCount--;
     if (gRcu.refCount > 0) return;
@@ -269,7 +270,7 @@ gc()
 {
     // Pointless to have more then 2 threads gc-ing and limitting to one
     // significantly simplifies the algo.
-    TryLockGuard<Lock> guard(gRcu.lock);
+    TryLockGuard<Lock> guard(gRcu.gcLock);
     if (!guard) return false;
 
     return ::gc();
