@@ -21,7 +21,7 @@ namespace lockless {
 
 namespace {
 
-bool gcImpl();
+bool gc();
 
 /******************************************************************************/
 /* DATA STRUCTS                                                               */
@@ -61,6 +61,35 @@ struct GlobalRcuImpl
 
     DebuggingLog<10240, DebugRcu>::type log;
 } gRcu;
+
+string print()
+{
+    size_t epochsTotal[2] = { 0, 0 };
+
+    string line;
+    ListNode<Epochs>* node = gRcu.threadList.head;
+
+    while (node) {
+        Epochs& epochs = node->get();
+        line += format(
+                "  ptr=%10p, next=%10p, count=[ %ld, %ld ], defer=[ %10p, %10p ]\n",
+                node, node->next(), epochs[0].count, epochs[1].count,
+                epochs[0].deferList.head.load(),
+                epochs[1].deferList.head.load());
+
+        for (size_t i = 0; i < 2; ++i)
+            epochsTotal[i] += epochs[i].count;
+
+        node = node->next();
+    }
+
+    string head = format(
+            "head=%p, dump=%p, refCount=%ld, epoch=%ld, count=[ %ld, %ld ]\n",
+            gRcu.threadList.head.load(), gRcu.gcDump, gRcu.refCount, gRcu.epoch,
+            epochsTotal[0], epochsTotal[1]);
+
+    return head + line;
+}
 
 
 /******************************************************************************/
@@ -133,8 +162,8 @@ GlobalRcu::
 
     // Run any leftover defered work in both epochs.
     size_t epoch = gRcu.epoch;
-    gcImpl();
-    gcImpl();
+    lockless::gc();
+    lockless::gc();
 
     // Executing gc() twice should increment the epoch counter twice. If this
     // check fails then there's still a thread in one of the epochs.
@@ -194,7 +223,7 @@ void execute(List<GlobalRcu::DeferFn>& deferList)
     }
 }
 
-bool gcImpl()
+bool gc()
 {
     size_t epoch = (gRcu.epoch - 1) & 1;
 
@@ -237,40 +266,12 @@ gc()
     TryLockGuard<Lock> guard(gRcu.lock);
     if (!guard) return false;
 
-    return gcImpl();
+    return lockless::gc();
 }
 
 string
 GlobalRcu::
-print() const
-{
-    size_t epochsTotal[2] = { 0, 0 };
-
-    string line;
-    ListNode<Epochs>* node = gRcu.threadList.head;
-
-    while (node) {
-        Epochs& epochs = node->get();
-        line += format(
-                "  ptr=%10p, next=%10p, count=[ %ld, %ld ], defer=[ %10p, %10p ]\n",
-                node, node->next(), epochs[0].count, epochs[1].count,
-                epochs[0].deferList.head.load(),
-                epochs[1].deferList.head.load());
-
-        for (size_t i = 0; i < 2; ++i)
-            epochsTotal[i] += epochs[i].count;
-
-        node = node->next();
-    }
-
-    string head = format(
-            "head=%p, dump=%p, refCount=%ld, epoch=%ld, count=[ %ld, %ld ]\n",
-            gRcu.threadList.head.load(), gRcu.gcDump, gRcu.refCount, gRcu.epoch,
-            epochsTotal[0], epochsTotal[1]);
-
-    return head + line;
-}
-
+print() const { return lockless::print(); }
 
 LogAggregator
 GlobalRcu::
