@@ -106,21 +106,22 @@ void destructTls(ListNode<Epochs>& node)
     // Ensures that we don't race with the destruction of the gRcu lock.
     LockGuard<Lock> guard(gRcu.lock);
 
-    // Everything should have been cleaned up by the gRcu destructor. Bail.
     if (!gRcu.refCount) {
+        // Make sure everything was properly cleaned up by the GlobalRcu
+        // destructor.
         for (size_t i = 0; i < 2; ++i)
             locklessCheckEq(node.get()[i].count, 0ULL, gRcu.log);
-        return;
     }
+    else {
+        // Move all leftover defer work to the gcDump node which will be gc-ed
+        // on the next successful gc pass for that epoch.
+        for (size_t i = 0; i < 2; ++i) {
+            Epoch& nodeEpoch = node.get()[i];
+            locklessCheckEq(nodeEpoch.count, 0ULL, gRcu.log);
 
-    // Move all leftover defer work to the gcDump node which will be gc-ed on
-    // the next successful gc pass for that epoch.
-    for (size_t i = 0; i < 2; ++i) {
-        Epoch& nodeEpoch = node.get()[i];
-        locklessCheckEq(nodeEpoch.count, 0ULL, gRcu.log);
-
-        Epoch& gcEpoch = gRcu.gcDump->get()[i];
-        gcEpoch.deferList.take(nodeEpoch.deferList);
+            Epoch& gcEpoch = gRcu.gcDump->get()[i];
+            gcEpoch.deferList.take(nodeEpoch.deferList);
+        }
     }
 
     gRcu.threadList.remove(&node);
