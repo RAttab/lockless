@@ -184,6 +184,14 @@ void destructTls(ListNode<Epochs>& node)
     }
 
     gRcu.threadList.remove(&node);
+
+    /* Since we removed our node from the list we know that no new gc pass will
+       be able to read our node so all we need to do is wait for the current gc
+       pass to complete to know that it's safe to delete our node.
+
+       In a way, it's a bit like a pseudo-rcu.
+    */
+    LockGuard<Lock> waitForGc(gRcu.gcLock);
 }
 
 // Direct access to a node for a given thread.

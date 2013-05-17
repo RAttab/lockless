@@ -53,8 +53,6 @@ BOOST_AUTO_TEST_CASE(simpleTest)
         ParallelTest test;
         test.add(doThread, Threads);
         test.run();
-
-        logToStream(gcThread.log());
     }
 
     for (size_t i = 0; i < counters.size(); ++i)
@@ -123,8 +121,6 @@ BOOST_AUTO_TEST_CASE(complexTest)
     test.add(doWriteThread, WriteThreads);
     test.add(doReadThread, ReadThreads);
     test.run();
-
-    logToStream(gcThread.log());
 
     for (auto& obj : slots) {
         if (!obj.load()) delete obj.load();
