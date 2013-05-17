@@ -5,15 +5,19 @@
    Static Read-Copy-Update gRcuementation.
 */
 
+#define LOCKLESS_RCU_DEBUG 1
+
 #include "grcu.h"
 #include "tls.h"
+#include "tm.h"
 #include "log.h"
 #include "check.h"
 
 #include <array>
+#include <algorithm>
 #include <thread>
 #include <mutex>
-#include <pthread.h>
+#include <memory>
 
 using namespace std;
 using namespace lockless;
@@ -290,5 +294,98 @@ log()
     return LogAggregator(gRcu.log);
 }
 
+
+/******************************************************************************/
+/* GC THREAD                                                                  */
+/******************************************************************************/
+
+namespace {
+
+struct GcThreadImpl
+{
+    GcThreadImpl() : refCount(0), shutdown(true) {}
+
+    Lock lock;
+    size_t refCount;
+
+    atomic<bool> shutdown;
+    unique_ptr<thread> gcThread;
+
+    DebuggingLog<10240, DebugRcu>::type log;
+
+} gcThread;
+
+void doGcThread()
+{
+    enum { MaxSleepMs = 1000 };
+    size_t sleepMs = 1;
+
+    auto& log = gcThread.log;
+
+    log.log(LogRcu, "gc-start", "%lf", Time::wall());
+
+    GlobalRcu rcu;
+    while (!gcThread.shutdown) {
+        Timer tm;
+        bool success = rcu.gc();
+
+        if (!success)
+            sleepMs = min<size_t>(sleepMs * 2, MaxSleepMs);
+        else sleepMs = sleepMs - 1;
+
+        log.log(LogRcu, "gc", "%lf - duration=%lf, sleep=%ld",
+                Time::wall(), tm.elapsed(), sleepMs);
+
+        if (!sleepMs) sleepMs = 1;
+        else this_thread::sleep_for(chrono::milliseconds(sleepMs));
+    }
+
+    log.log(LogRcu, "gc-end", "%lf", Time::wall());
+}
+
+} // namespace anonymous
+
+GcThread::
+GcThread()
+{
+    lock_guard<Lock> guard(gcThread.lock);
+    if (++gcThread.refCount > 1) return;
+
+    gcThread.shutdown = false;
+    gcThread.gcThread.reset(new thread(doGcThread));
+}
+
+void
+GcThread::
+join()
+{
+    lock_guard<Lock> guard(gcThread.lock);
+    locklessCheck(!gcThread.shutdown, gcThread.log);
+    if (--gcThread.refCount > 0) return;
+
+    gcThread.shutdown = true;
+    gcThread.gcThread->join();
+    gcThread.gcThread.reset();
+}
+
+void
+GcThread::
+detach()
+{
+    lock_guard<Lock> guard(gcThread.lock);
+    locklessCheck(!gcThread.shutdown, gcThread.log);
+    if (--gcThread.refCount > 0) return;
+
+    gcThread.shutdown = true;
+    gcThread.gcThread->detach();
+    gcThread.gcThread.reset();
+}
+
+LogAggregator
+GcThread::
+log()
+{
+    return LogAggregator(gcThread.log);
+}
 
 } // lockless

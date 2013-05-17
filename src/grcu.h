@@ -54,6 +54,22 @@ private:
     void defer(ListNode<DeferFn>*);
 };
 
+
+/******************************************************************************/
+/* GC THREAD                                                                  */
+/******************************************************************************/
+
+struct GcThread
+{
+    GcThread();
+    ~GcThread() { join(); }
+
+    void join();
+    void detach();
+
+    LogAggregator log();
+};
+
 } // lockless
 
 #endif // __lockless__grcu_h__
