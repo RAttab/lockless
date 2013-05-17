@@ -317,7 +317,7 @@ dumpToStream(
 
  */
 template<typename LogT>
-void logToStream(LogT&& log, std::ostream& stream = std::cerr)
+void logToStream(LogT& log, std::ostream& stream = std::cerr)
 {
     dumpToStream(log.dump(), stream);
 }
