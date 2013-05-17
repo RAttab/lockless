@@ -68,6 +68,9 @@ struct GcThread
     void detach();
 
     LogAggregator log();
+
+private:
+    bool joined;
 };
 
 } // lockless

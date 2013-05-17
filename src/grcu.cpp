@@ -355,7 +355,7 @@ void doGcThread()
 } // namespace anonymous
 
 GcThread::
-GcThread()
+GcThread() : joined(false)
 {
     lock_guard<Lock> guard(gcThread.lock);
     if (++gcThread.refCount > 1) return;
@@ -368,6 +368,9 @@ void
 GcThread::
 join()
 {
+    if (joined) return;
+    joined = true;
+
     lock_guard<Lock> guard(gcThread.lock);
     locklessCheck(!gcThread.shutdown, gcThread.log);
     if (--gcThread.refCount > 0) return;
@@ -381,6 +384,9 @@ void
 GcThread::
 detach()
 {
+    if (joined) return;
+    joined = true;
+
     lock_guard<Lock> guard(gcThread.lock);
     locklessCheck(!gcThread.shutdown, gcThread.log);
     if (--gcThread.refCount > 0) return;
