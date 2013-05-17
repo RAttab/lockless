@@ -9,6 +9,7 @@
 #define BOOST_TEST_DYN_LINK
 
 #define LOCKLESS_GRCU_DEBUG 1
+#define LOCKLESS_CHECK_ABORT 1
 
 #include "grcu.h"
 #include "check.h"
