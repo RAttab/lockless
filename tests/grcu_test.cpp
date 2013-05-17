@@ -18,6 +18,7 @@
 #include <iostream>
 #include <random>
 #include <vector>
+#include <array>
 #include <stack>
 #include <map>
 
@@ -181,8 +182,17 @@ struct RcuThread
         while (action) cvar.wait(guard);
     }
 
-    void enter() { doEvent(2); }
-    void exit() { doEvent(3); }
+    size_t enter()
+    {
+        doEvent(2);
+        return epochs.top();
+    }
+    size_t exit()
+    {
+        size_t epoch = epochs.top();
+        doEvent(3);
+        return epoch;
+    }
     void defer(const function<void()>& fn)
     {
         deferFn = fn;
@@ -220,10 +230,12 @@ BOOST_AUTO_TEST_CASE(threadedSmokeTest)
 
     {
         RcuThread th;
-        th.enter();
+        size_t e0 = th.enter();
         th.defer([&] { deferCount++; });
         th.defer([&] { deferCount += 10; });
-        th.exit();
+        size_t e1 = th.exit();
+
+        locklessCheckEq(e0, e1, NullLog);
     }
 
     locklessCheckEq(deferCount, 11ULL, GlobalRcu().log());
@@ -344,6 +356,7 @@ BOOST_AUTO_TEST_CASE(fuzzTest)
         uniform_int_distribution<unsigned> actionRnd(0, 6);
 
         vector<RcuThread*> actors;
+        array<size_t, 2> inEpoch {{ 0, 0 }};
 
         auto getEpoch = [&] {
             GlobalRcu rcu;
@@ -369,7 +382,7 @@ BOOST_AUTO_TEST_CASE(fuzzTest)
 
             if (actors.size() > 5) {
                 while (actors[actor]->active())
-                    actors[actor]->exit();
+                    inEpoch[actors[actor]->exit() & 1]--;
 
                 auto pred = [] (RcuThread* actor) {
                     if (actor->active()) return false;
@@ -384,14 +397,14 @@ BOOST_AUTO_TEST_CASE(fuzzTest)
             }
 
             else if (action == 2)
-                actors[actor]->enter();
+                inEpoch[actors[actor]->enter() & 1]++;
 
             else if (action == 3) {
                 for (size_t i = 0; i < actors.size(); ++i) {
                     int j = (actor + i) % actors.size();
                     if (!actors[j]->active()) continue;
 
-                    actors[j]->exit();
+                    inEpoch[actors[j]->exit() & 1]--;
                     break;
                 }
             }
@@ -401,7 +414,10 @@ BOOST_AUTO_TEST_CASE(fuzzTest)
 
             else {
                 size_t epoch = getEpoch();
-                actors[actor]->defer([&, epoch] { counters[epoch]++; });
+                actors[actor]->defer([&, epoch] {
+                            locklessCheckEq(inEpoch[epoch & 1], 0ULL, NullLog);
+                            counters[epoch]++;
+                        });
                 expected[epoch]++;
             }
         }
