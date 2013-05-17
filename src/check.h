@@ -175,8 +175,7 @@ struct SignalCheck
     {
         this->log.add(log);
 
-        details::installSignalHandler(
-                bind(logToStream<LogT>, std::ref(log), std::ref(std::cerr)));
+        details::installSignalHandler([&] { logToStream(log); });
     }
 
     ~SignalCheck()
