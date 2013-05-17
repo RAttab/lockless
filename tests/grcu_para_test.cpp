@@ -53,6 +53,8 @@ BOOST_AUTO_TEST_CASE(simpleTest)
         ParallelTest test;
         test.add(doThread, Threads);
         test.run();
+
+        gcThread.join();
     }
 
     for (size_t i = 0; i < counters.size(); ++i)
@@ -122,7 +124,55 @@ BOOST_AUTO_TEST_CASE(complexTest)
     test.add(doReadThread, ReadThreads);
     test.run();
 
+    gcThread.join();
+
     for (auto& obj : slots) {
         if (!obj.load()) delete obj.load();
     }
+}
+
+
+BOOST_AUTO_TEST_CASE(threadCreationTest)
+{
+    cerr << fmtTitle("threadCreationTest", '=') << endl;
+
+    enum {
+        CreatorThreads = 8,
+        Threads = 100,
+        Iterations = 100,
+    };
+
+    array<atomic<size_t>, Threads> counters;
+    for (auto& c: counters) c = 0;
+
+    auto doThread = [&] {
+        GlobalRcu rcu;
+        for (size_t i = 0; i < Iterations; ++i) {
+            RcuGuard<GlobalRcu> guard(rcu);
+            rcu.defer([&, i] { counters[i]++; });
+        }
+    };
+
+    auto doCreatorThread = [&] (unsigned) {
+        array<unique_ptr<thread>, Threads> threads;
+
+        for (auto& th: threads) th.reset(new thread(doThread));
+
+        for (auto& th: threads) {
+            th->join();
+            th.reset();
+        }
+    };
+
+
+    GcThread gcThread;
+
+    ParallelTest test;
+    test.add(doCreatorThread, CreatorThreads);
+    test.run();
+
+    gcThread.join();
+
+    for (const auto& c: counters)
+        locklessCheckEq(c.load(), size_t(CreatorThreads * Threads), NullLog);
 }
