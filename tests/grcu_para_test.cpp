@@ -53,10 +53,80 @@ BOOST_AUTO_TEST_CASE(simpleTest)
         ParallelTest test;
         test.add(doThread, Threads);
         test.run();
-    }
 
-    logToStream(GcThread().log());
+        logToStream(gcThread.log());
+    }
 
     for (size_t i = 0; i < counters.size(); ++i)
         locklessCheckEq(counters[i], Iterations, NullLog);
+}
+
+
+BOOST_AUTO_TEST_CASE(complexTest)
+{
+    cerr << fmtTitle("complexTest", '=') << endl;
+
+    enum {
+        ReadThreads = 4,
+        WriteThreads = 4,
+        Iterations = 10000,
+        Slots = 100,
+    };
+
+    const uint64_t MAGIC_VALUE = 0xDEADBEEFDEADBEEFULL;
+
+    struct Obj
+    {
+        uint64_t value;
+
+        Obj() : value(MAGIC_VALUE) {}
+        ~Obj() { check(); value = 0; }
+        void check() const { locklessCheckEq(value, MAGIC_VALUE, NullLog); }
+    };
+
+    atomic<unsigned> doneCount(0);
+
+    array< atomic<Obj*>, Slots> slots;
+    for (auto& obj : slots) obj.store(nullptr);
+
+    auto doWriteThread = [&] (unsigned) {
+        GlobalRcu rcu;
+
+        for (size_t it = 0; it < Iterations; ++it) {
+            RcuGuard<GlobalRcu> guard(rcu);
+
+            for (size_t index = Slots; index > 0; --index) {
+                Obj* obj = slots[index - 1].exchange(new Obj());
+                if (obj) rcu.defer([=] { obj->check(); delete obj; });
+            }
+        }
+
+        doneCount++;
+    };
+
+    auto doReadThread = [&] (unsigned) {
+        GlobalRcu rcu;
+        do {
+            RcuGuard<GlobalRcu> guard(rcu);
+
+            for (size_t index = 0; index < Slots; ++index) {
+                Obj* obj = slots[index].load();
+                if (obj) obj->check();
+            }
+
+        } while (doneCount.load() < WriteThreads);
+    };
+
+    GcThread gcThread;
+
+    ParallelTest test;
+    test.add(doWriteThread, WriteThreads);
+    test.add(doReadThread, ReadThreads);
+    test.run();
+
+    logToStream(gcThread.log());
+
+    for (auto& obj : slots) {
+        if (!obj.load()) delete obj.load();
+    }
 }
