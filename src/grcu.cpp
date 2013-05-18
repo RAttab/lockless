@@ -64,7 +64,7 @@ struct GlobalRcuImpl
     Lock refLock;
     size_t refCount;
 
-    size_t epoch;
+    atomic<size_t> epoch;
     List<Epochs> threadList;
 
     Lock gcLock;
@@ -107,8 +107,6 @@ bool gc()
     node = gRcu.threadList.head;
     while (node) {
         Epoch& nodeEpoch = node->get()[epoch];
-        locklessCheckEq(nodeEpoch.count, 0ULL, gRcu.log);
-
         execute(nodeEpoch.deferList);
         node = node->next();
     }
@@ -144,8 +142,8 @@ string print()
 
     string head = format(
             "head=%p, dump=%p, refCount=%ld, epoch=%ld, count=[ %ld, %ld ]\n",
-            gRcu.threadList.head.load(), gRcu.gcDump, gRcu.refCount, gRcu.epoch,
-            epochsTotal[0], epochsTotal[1]);
+            gRcu.threadList.head.load(), gRcu.gcDump, gRcu.refCount,
+            gRcu.epoch.load(), epochsTotal[0], epochsTotal[1]);
 
     return head + line;
 }
@@ -237,7 +235,7 @@ GlobalRcu::
 
     // Executing gc() twice should increment the epoch counter twice. If this
     // check fails then there's still a thread in one of the epochs.
-    locklessCheckEq(epoch + 2, gRcu.epoch, gRcu.log);
+    locklessCheckEq(epoch + 2, gRcu.epoch.load(), gRcu.log);
 
     bool removed = gRcu.threadList.remove(gRcu.gcDump);
     locklessCheck(removed, gRcu.log);
@@ -248,13 +246,40 @@ size_t
 GlobalRcu::
 enter()
 {
-    size_t epoch = gRcu.epoch;
-    getTls()[epoch & 1].count++;
+    while (true) {
+        size_t epoch = gRcu.epoch;
+        size_t count = getTls()[epoch & 1].count++;
 
-    // Prevents reads from taking place before we increment the epoch counter.
-    atomic_thread_fence(memory_order_acquire);
+        // Prevents reads from taking place before we increment the epoch
+        // counter.
+        atomic_thread_fence(memory_order_acquire);
 
-    return epoch;
+        /* Fun scenario that we need to guard against:
+
+           1) Read the gRcu.epoch E and gets pre-empted.
+           2) gRcu.epoch is moved forward such that epoch E is available for gc.
+           3) First pass of the gc thread finds the epoch vacated.
+           4) Our thread wakes up and increments epoch E and exits.
+           5) Another thread increments epoch E+1 and exits.
+           6) Assuming no asserts, gc thread moves gRcu.epoch forward.
+
+           This is an issue because our first thread essentially entered E+2
+           even though a later thread entered epoch E+1. This means our first
+           thread in E+2 will not be taken into account while gc-ing the epoch
+           E+1 even though it entered before the second thread that is in E+1.
+           In a nutshell, this breaks the RCU guarantee which is bad(tm).
+
+           The fix is quite simple, make sure that gRcu.epoch hasn't been moved
+           foward before exiting. While there are probably cleaner solutions,
+           the ones I can think of requrie the introduction of a CAS which would
+           limit the scalability of GlobalRcu. Also, gRcu.epoch shouldn't be
+           moved forward too often (every 1ms is reasonable enough) so this
+           branch should fail very rarely.
+        */
+        if (epoch == gRcu.epoch || count) return epoch;
+
+        getTls()[epoch & 1].count--;
+    }
 }
 
 void
