@@ -6,6 +6,7 @@
 */
 
 #include "rcu.h"
+#include "grcu.h"
 #include "perf_utils.h"
 
 #include <atomic>
@@ -18,19 +19,22 @@ using namespace lockless;
 /* OPS                                                                        */
 /******************************************************************************/
 
+template<typename Rcu>
 struct Context
 {
     Rcu rcu;
     atomic<size_t> counter;
 };
 
-void doEnterExitThread(Context& ctx, unsigned itCount)
+template<typename Rcu>
+void doEnterExitThread(Context<Rcu>& ctx, unsigned itCount)
 {
     for (size_t it = 0; it < itCount; ++it)
         RcuGuard<Rcu> guard(ctx.rcu);
 }
 
-void doDeferThread(Context& ctx, unsigned itCount)
+template<typename Rcu>
+void doDeferThread(Context<Rcu>& ctx, unsigned itCount)
 {
     for (size_t it = 0; it < itCount; ++it)
         ctx.rcu.defer([&] { ctx.counter++; });
@@ -40,6 +44,23 @@ void doDeferThread(Context& ctx, unsigned itCount)
 /******************************************************************************/
 /* MAIN                                                                       */
 /******************************************************************************/
+
+template<typename Rcu>
+void runTest(
+        unsigned thCount,
+        size_t itCount,
+        Format fmt,
+        const array<string, 2>& titles )
+{
+    PerfTest< Context<Rcu> > perf;
+    perf.add(doEnterExitThread<Rcu>, thCount, itCount);
+    perf.add(doDeferThread<Rcu>, thCount, itCount);
+
+    perf.run();
+
+    for (unsigned gr = 0; gr < 2; ++gr)
+        cerr << dump(perf, gr, titles[gr], fmt) << endl;
+}
 
 int main(int argc, char** argv)
 {
@@ -54,15 +75,13 @@ int main(int argc, char** argv)
 
     Format fmt = csvOutput ? Csv : Human;
 
-    PerfTest<Context> perf;
-    perf.add(doEnterExitThread, thCount, itCount);
-    perf.add(doDeferThread, thCount, itCount);
+    runTest<Rcu>(thCount, itCount, fmt, {{ "rcu-epochs", "rcu-defer" }});
+    {
+        GcThread gcThread;
+        runTest<GlobalRcu>(
+                thCount, itCount, fmt, {{ "grcu-epochs", "grcu-defer" }});
+    }
 
-    perf.run();
-
-    array<string, 2> titles {{ "epochs", "defer" }};
-    for (unsigned gr = 0; gr < 2; ++gr)
-        cerr << dump(perf, gr, titles[gr], fmt) << endl;
 
     return 0;
 }

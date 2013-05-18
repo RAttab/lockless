@@ -205,7 +205,7 @@ dumpHuman(
     std::array<char, 256> buffer;
     snprintf(buffer.data(), buffer.size(),
 
-            "| %8s th=%3d it=%s "
+            "| %12s th=%3d it=%s "
             "| s/ops=[ %s, %s, %s ] stddev=%s "
             "| ops/s=[ %s, %s, %s ] stddev=%s",
 
