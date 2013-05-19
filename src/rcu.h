@@ -59,7 +59,7 @@ struct Rcu
     /* Blah
 
        Thread Safety: Can issue calls to delete which could lock. Everything
-           else is lock-free and wait-free.
+           else is lock-free.
 
        Exception safety: Does not throw.
      */
@@ -83,7 +83,7 @@ struct Rcu
 
     /* Blah
 
-       Thread Safety: Completely lock-free and wait-free.
+       Thread Safety: Completely lock-free.
 
        Exception Safety: Does not throw.
      */
@@ -136,7 +136,7 @@ struct Rcu
     /* Blah
 
        Thread safety: Issues a single call to new which could lock. Everything
-          else is lock-free and wait-free.
+          else is lock-free.
 
        Exception safety: Issues a single call to new which may throw.
            Everything else is nothrow.

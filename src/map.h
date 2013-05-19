@@ -74,7 +74,7 @@ public:
 
     /* Blah
 
-       Thread Safety: Completely lock-free and wait-free.
+       Thread Safety: Completely lock-free.
 
        Exception Safety: Does not throw.
      */
@@ -89,7 +89,7 @@ public:
     /* Blah
 
        Thread safety: Issues a single call to malloc which could lock.
-           Everything else is lock-free and wait-free.
+           Everything else is lock-free.
 
        Exception Safety: Can only throw if malloc, new or delete throws.
      */
@@ -104,7 +104,7 @@ public:
     /* Blah
 
        Thread safety: Issues calls to malloc, new and delete which could lock.
-           Everything else is lock-free and wait-free.
+           Everything else is lock-free.
 
        Exception Safety: Can only throw if new throws.
      */
@@ -119,7 +119,7 @@ public:
     /* Blah
 
        Thread safety: Issues calls to malloc, new and delete which could lock.
-           Everything else is lock-free and wait-free.
+           Everything else is lock-free.
 
        Exception Safety: Can only throw if malloc, new or delete throws.
      */
@@ -144,7 +144,7 @@ public:
     /* Blah. Same interface as atomic<T>.compare_exchange()
 
        Thread safety: Issues calls to malloc, new and delete which could lock.
-           Everything else is lock-free and wait-free.
+           Everything else is lock-free.
 
        Exception Safety: Can only throw if malloc, new or delete throws.
      */
@@ -167,7 +167,7 @@ public:
     /* Blah.
 
        Thread safety: Issues calls to malloc, new and delete which could lock.
-           Everything else is lock-free and wait-free.
+           Everything else is lock-free.
 
        Exception Safety: Can only throw if malloc, new or delete throws.
      */

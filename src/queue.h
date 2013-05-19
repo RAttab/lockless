@@ -59,7 +59,7 @@ struct Queue
     /* Blah
 
        Thread Safety: Can issue calls to new or delete which could
-           lock. Everything else is lock-free and wait-free.
+           lock. Everything else is lock-free.
 
        Exception Safety: Only throws on calls to new or delete.
      */
@@ -104,7 +104,7 @@ struct Queue
     /* Blah
 
        Thread Safety: Can issue calls to new or delete which could
-           lock. Everything else is lock-free and wait-free.
+           lock. Everything else is lock-free.
 
        Exception Safety: Only throws on calls delete.
      */
@@ -144,7 +144,7 @@ struct Queue
     /* Blah
 
        Thread Safety: Can issue calls to new or delete which could
-           lock. Everything else is lock-free and wait-free.
+           lock. Everything else is lock-free.
 
        Exception Safety: Only throws on calls to new or delete.
      */
