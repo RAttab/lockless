@@ -87,12 +87,8 @@ struct ListNode
         return *this;
     }
 
-
-    T& get() { return value; }
-    const T& get() const { return value; }
-
-    operator T& () { return get(); }
-    operator const T& () const { return get(); }
+    operator T& () { return value; }
+    operator const T& () const { return value; }
 
     bool isMarked() const { return details::isMarked(rawNext.load()); }
     Node* mark()

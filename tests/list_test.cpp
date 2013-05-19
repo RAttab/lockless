@@ -29,12 +29,12 @@ BOOST_AUTO_TEST_CASE(test_node)
 
     Node a(size_t(10));
     locklessCheckEq(a, size_t(10), NullLog);
-    locklessCheckEq(a.get(), size_t(10), NullLog);
+    locklessCheckEq(a.value, size_t(10), NullLog);
     locklessCheckEq(a.next(), nullptr, NullLog);
 
     Node b(20);
     locklessCheckEq(b, size_t(20), NullLog);
-    locklessCheckEq(b.get(), size_t(20), NullLog);
+    locklessCheckEq(b.value, size_t(20), NullLog);
     locklessCheckEq(b.next(), nullptr, NullLog);
 
     Node* exp = nullptr;
@@ -46,7 +46,7 @@ BOOST_AUTO_TEST_CASE(test_node)
 
     Node c{Node(a)}; // copy & move constructor.
     locklessCheckEq(c, size_t(10), NullLog);
-    locklessCheckEq(c.get(), size_t(10), NullLog);
+    locklessCheckEq(c.value, size_t(10), NullLog);
     locklessCheckEq(c.next(), nullptr, NullLog);
 
     Node* pNil = b.mark();

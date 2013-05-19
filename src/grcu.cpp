@@ -80,7 +80,7 @@ void execute(List<GlobalRcu::DeferFn>& deferList)
 
     while (node) {
         // exec the defered work.
-        node->get()();
+        node->value();
 
         auto* next = node->next();
         delete node;
@@ -98,7 +98,7 @@ bool gc()
     // Do an initial pass over the list to see if we can do a gc pass.
     while (node) {
         // Someone's still in the epoch so we can't gc anything; just bail.
-        if (node->get()[epoch].count) return false;
+        if (node->value[epoch].count) return false;
 
         node = node->next();
     }
@@ -106,7 +106,7 @@ bool gc()
     // Our epoch has been fully vacated so time to execute defered work.
     node = gRcu.threadList.head;
     while (node) {
-        Epoch& nodeEpoch = node->get()[epoch];
+        Epoch& nodeEpoch = node->value[epoch];
         execute(nodeEpoch.deferList);
         node = node->next();
     }
@@ -127,7 +127,7 @@ string print()
     ListNode<Epochs>* node = gRcu.threadList.head;
 
     while (node) {
-        Epochs& epochs = node->get();
+        Epochs& epochs = node->value;
         line += format(
                 "  ptr=%10p, next=%10p, count=[ %ld, %ld ], defer=[ %10p, %10p ]\n",
                 node, node->next(), epochs[0].count, epochs[1].count,
@@ -167,16 +167,16 @@ void destructTls(ListNode<Epochs>& node)
         // Make sure everything was properly cleaned up by the GlobalRcu
         // destructor.
         for (size_t i = 0; i < 2; ++i)
-            locklessCheckEq(node.get()[i].count, 0ULL, gRcu.log);
+            locklessCheckEq(node.value[i].count, 0ULL, gRcu.log);
     }
     else {
         // Move all leftover defer work to the gcDump node which will be gc-ed
         // on the next successful gc pass for that epoch.
         for (size_t i = 0; i < 2; ++i) {
-            Epoch& nodeEpoch = node.get()[i];
+            Epoch& nodeEpoch = node.value[i];
             locklessCheckEq(nodeEpoch.count, 0ULL, gRcu.log);
 
-            Epoch& gcEpoch = gRcu.gcDump->get()[i];
+            Epoch& gcEpoch = gRcu.gcDump->value[i];
             gcEpoch.deferList.take(nodeEpoch.deferList);
         }
     }
