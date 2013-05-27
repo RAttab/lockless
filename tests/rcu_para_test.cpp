@@ -63,9 +63,9 @@ BOOST_AUTO_TEST_CASE(complexTest)
     cerr << fmtTitle("complexTest", '=') << endl;
 
     enum {
-        ReadThreads = 2,
-        WriteThreads = 2,
-        Iterations = 1000,
+        ReadThreads = 4,
+        WriteThreads = 4,
+        Iterations = 10000,
         Slots = 100,
     };
 
