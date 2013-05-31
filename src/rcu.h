@@ -49,15 +49,41 @@ struct Rcu
 
     size_t enter()
     {
-        // \todo there's a race here. See GlobalRcu::enter()
-        size_t epoch = current.load();
-        epochs[epoch & 1].count++;
+        size_t epoch;
+
+        /** The extra loop is to guard against the following race:
+
+            1) Thread A reads current E and gets preempted.
+            2) Thread B enters, incs E+1, moves epoch forward and exits.
+            3) Thread C enters, incs E+1, and reads E's count (0).
+            4) Thread A wakes up, incs count and exits.
+            5) Thread C moves epoch forward and exits.
+            6) Thread B and C vacates the epoch and trigger a gc.
+
+            This is an issue because thread A entered its epoch before C but
+            it's not taken into account when defering epoch E+1. This breaks the
+            RCU guarantees which is bad(tm).
+
+            Since this is the same fundamental race as GlobalRcu, we'll use the
+            same solution: don't exit while entering an epoch that isn't
+            (equivalent to) current. Note that so long as we don't exit the
+            function, we haven't incured any risk vis-a-vis the user reading
+            data that it shouldn't read so its fine if we back off and try
+            again.
+         */
+        while (true) {
+            epoch = current;
+            epochs[epoch & 1].count++;
+
+            if ((epoch & 1) == (current & 1)) break;
+            epochs[epoch & 1].count--;
+        }
 
         log.log(LogRcu, "enter", "epoch=%ld, count=%ld",
                 epoch, epochs[epoch & 1].count.load());
 
         size_t oldOther = epoch - 1;
-        if (!epochs[oldOther & 1].count.load()) {
+        if (!epochs[oldOther & 1].count) {
             size_t oldCurrent = epoch;
             current.compare_exchange_weak(oldCurrent, oldCurrent + 1);
         }
@@ -70,7 +96,7 @@ struct Rcu
     {
         auto& ep = epochs[epoch & 1];
 
-        size_t oldCount = ep.count.load();
+        size_t oldCount = ep.count;
         log.log(LogRcu, "exit", "epoch=%ld, count=%ld", epoch, oldCount);
         locklessCheckGt(oldCount, 0ULL, log);
 
@@ -117,7 +143,7 @@ struct Rcu
            matter because, at worst, the defered entry will be executed later
            then it should which doesn't impact anything.
          */
-        size_t epoch = current.load();
+        size_t epoch = current;
         epochs[epoch & 1].deferList.push(node);
 
         log.log(LogRcu, "add-defer", "epoch=%ld, head=%p", epoch, node);
@@ -125,7 +151,7 @@ struct Rcu
 
     std::string print() const
     {
-        size_t oldCurrent = current.load();
+        size_t oldCurrent = current;
         size_t oldOther = oldCurrent - 1;
 
         std::array<char, 80> buffer;
