@@ -39,28 +39,33 @@ struct MallocDeleter
 
 
 /******************************************************************************/
-/* FORMAT                                                                     */
+/* UNWRAP                                                                     */
 /******************************************************************************/
-// \todo GCC has a printf param check builtin. No idea if it works with variadic
-// templates.
-
-namespace details {
 
 template<typename T>
 struct Unwrap
 {
-    static T get(const T& val) { return val; }
+    typedef T Ret;
+    static Ret get(const T& val) { return val; }
 };
 
 // Allows printout of std::atomics without having to load them out first.
 template<typename T>
 struct Unwrap< std::atomic<T> >
 {
-    static T get(const std::atomic<T>& val) { return val.load(); }
+    typedef T Ret;
+    static Ret get(const std::atomic<T>& val) { return val; }
 };
 
-} // namespace details
+template<typename T>
+typename Unwrap<T>::Ret unwrap(const T& val) { return Unwrap<T>::get(val); }
 
+
+/******************************************************************************/
+/* FORMAT                                                                     */
+/******************************************************************************/
+// \todo GCC has a printf param check builtin. No idea if it works with variadic
+// templates.
 
 template<typename... Args>
 std::string format(const std::string& pattern, const Args&... args)
@@ -74,8 +79,7 @@ std::string format(const char* pattern, const Args&... args)
     std::array<char, 256> buffer;
 
     size_t chars = snprintf(
-            buffer.data(), buffer.size(), pattern,
-            details::Unwrap<Args>::get(args)...);
+            buffer.data(), buffer.size(), pattern, unwrap(args)...);
 
     return std::string(buffer.data(), chars);
 }
