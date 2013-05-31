@@ -107,10 +107,9 @@ std::string to_string(const T* p)
 template<typename First, typename Second>
 std::string to_string(const std::pair<First, Second>& p)
 {
-    std::array<char, 80> buffer;
-    snprintf(buffer.data(), buffer.size(), "<%s, %s>",
-            to_string(p.first).c_str(), to_string(p.second).c_str());
-    return std::string(buffer.data());
+    return format("<%s, %s>",
+            to_string(p.first).c_str(),
+            to_string(p.second).c_str());
 }
 
 } // namespace std

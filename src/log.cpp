@@ -71,21 +71,8 @@ string
 LogEntry::
 print() const
 {
-    array<char, 256> buffer;
-
-    int written = snprintf(
-            buffer.data(), buffer.size(),
-            "%8ld {%2ld} <%s> %-10s: %s",
-            tick,
-            threadId,
-            to_string(type).c_str(),
-            title.c_str(),
-            msg.c_str());
-
-    if (written < 0) return "LOG ERROR";
-    written = min<unsigned>(written, buffer.size());
-
-    return string(buffer.data(), written);
+    return format("%8ld {%2ld} <%s> %-10s: %s",
+            tick, threadId, to_string(type).c_str(), title.c_str(), msg.c_str());
 }
 
 } // lockless

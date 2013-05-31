@@ -137,9 +137,8 @@ struct Log
     template<typename Title, typename... Args>
     void log(LogType type, Title&& title, const std::string& fmt, Args&&... args)
     {
-        std::array<char, 256> buffer;
-        snprintf(buffer.data(), buffer.size(), fmt.c_str(), args...);
-        log(type, std::forward<Title>(title), std::string(buffer.data()));
+        std::string msg = format(fmt.c_str(), std::forward<Args>(args)...);
+        log(type, std::forward<Title>(title), msg);
     }
 
     std::vector<LogEntry> dump()

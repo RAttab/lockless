@@ -72,9 +72,7 @@ void check(const std::string& str, LogT&& log, const CheckContext& ctx)
 
 inline std::string checkStr(const char* pred)
 {
-    std::array<char, 256> buffer;
-    snprintf(buffer.data(), buffer.size(), "{ %s }", pred);
-    return std::string(buffer.data());
+    return format("{ %s }", pred);
 }
 
 
@@ -84,14 +82,10 @@ std::string checkStr(
         const char* first,  const First& firstVal,
         const char* second, const Second& secondVal)
 {
-    std::array<char, 256> buffer;
-    snprintf(buffer.data(), buffer.size(),
-            "{ %s %s %s } { %s %s %s }",
+    return format("{ %s %s %s } { %s %s %s }",
             first, op, second,
             std::to_string(firstVal).c_str(), op,
             std::to_string(secondVal).c_str());
-
-    return std::string(buffer.data());
 }
 
 

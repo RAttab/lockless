@@ -77,7 +77,7 @@ struct Rcu
         }
 
         log.log(LogRcu, "enter", "epoch=%ld, count=%ld",
-                epoch, epochs[epoch & 1].count.load());
+                epoch, epochs[epoch & 1].count);
 
         size_t oldOther = epoch - 1;
         if (!epochs[oldOther & 1].count) {
@@ -151,13 +151,10 @@ struct Rcu
         size_t oldCurrent = current;
         size_t oldOther = oldCurrent - 1;
 
-        std::array<char, 80> buffer;
-        snprintf(buffer.data(), buffer.size(), "{ cur=%ld, count=[%ld, %ld] }",
+        return format("{ cur=%ld, count=[%ld, %ld] }",
                 oldCurrent,
-                epochs[oldCurrent & 1].count.load(),
-                epochs[oldOther & 1].count.load());
-
-        return std::string(buffer.data());
+                epochs[oldCurrent & 1].count,
+                epochs[oldOther & 1].count);
     }
 
 private:

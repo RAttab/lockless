@@ -127,16 +127,13 @@ char fmtState(Atom atom)
 template<typename Magic, typename Atom>
 std::string fmtAtom(Atom atom)
 {
-    std::array<char, 20> buffer;
     char s = fmtState<Magic>(atom);
 
-    if (s == 'v' || s == 'm') {
-        Atom val = clearMarks<Magic>(atom);
-        snprintf(buffer.data(), buffer.size(), "{%c,%ld}", s, val);
-    }
-    else snprintf(buffer.data(), buffer.size(), "{%c}", s);
+    if (s != 'v' && s != 'm')
+        return format("{%c}", s);
 
-    return std::string(buffer.data());
+    Atom val = clearMarks<Magic>(atom);
+    return format("{%c,%ld}", s, val);
 }
 
 enum Policy
