@@ -44,10 +44,6 @@ namespace lockless {
 template<typename T>
 struct Queue
 {
-    /* Blah
-
-       Exception Safety: Only throws on calls to new.
-     */
     Queue() : rcu()
     {
         Entry* sentinel = new Entry();
@@ -56,13 +52,6 @@ struct Queue
     }
 
 
-    /* Blah
-
-       Thread Safety: Can issue calls to new or delete which could
-           lock. Everything else is lock-free.
-
-       Exception Safety: Only throws on calls to new or delete.
-     */
     template<typename T2>
     void push(T2&& value)
     {
@@ -101,13 +90,6 @@ struct Queue
     }
 
 
-    /* Blah
-
-       Thread Safety: Can issue calls to new or delete which could
-           lock. Everything else is lock-free.
-
-       Exception Safety: Only throws on calls delete.
-     */
     std::pair<bool, T> peek()
     {
         RcuGuard<Rcu> guard(rcu);
@@ -141,13 +123,6 @@ struct Queue
     }
 
 
-    /* Blah
-
-       Thread Safety: Can issue calls to new or delete which could
-           lock. Everything else is lock-free.
-
-       Exception Safety: Only throws on calls to new or delete.
-     */
     std::pair<bool, T> pop()
     {
         RcuGuard<Rcu> guard(rcu);

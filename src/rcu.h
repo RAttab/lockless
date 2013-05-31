@@ -24,9 +24,6 @@ namespace lockless {
 /* RCU                                                                        */
 /******************************************************************************/
 
-/* Blah
-
- */
 struct Rcu
 {
     typedef std::function<void()> DeferFn;

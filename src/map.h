@@ -23,9 +23,6 @@ namespace lockless {
 /* MAP                                                                        */
 /******************************************************************************/
 
-/* Blah
-
- */
 template<
     typename Key,
     typename Value,
@@ -62,22 +59,12 @@ class Map
 
 public:
 
-    /* Blah
-
-       Exception Safety: Only throws on calls to new.
-     */
     Map(size_t initialSize = 0, const Hash& hashFn = Hash()) :
         hashFn(hashFn), elem(0), table(nullptr)
     {
         resize(adjustCapacity(initialSize));
     }
 
-    /* Blah
-
-       Thread Safety: Completely lock-free.
-
-       Exception Safety: Does not throw.
-     */
     size_t size() const { return elem.load(); }
 
     size_t capacity() const
@@ -86,13 +73,6 @@ public:
         return newestTable()->capacity;
     }
 
-    /* Blah
-
-       Thread safety: Issues a single call to malloc which could lock.
-           Everything else is lock-free.
-
-       Exception Safety: Can only throw if malloc, new or delete throws.
-     */
     void resize(size_t capacity)
     {
         log.log(LogMap, "resize", "capacity=%ld", capacity);
@@ -101,13 +81,6 @@ public:
         resizeImpl(table.load(), adjustCapacity(capacity));
     }
 
-    /* Blah
-
-       Thread safety: Issues calls to malloc, new and delete which could lock.
-           Everything else is lock-free.
-
-       Exception Safety: Can only throw if new throws.
-     */
     std::pair<bool, Value> find(const Key& key)
     {
         log.log(LogMap, "find", "key=%s", std::to_string(key).c_str());
@@ -116,13 +89,6 @@ public:
         return findImpl(table.load(), hashFn(key), key);
     }
 
-    /* Blah
-
-       Thread safety: Issues calls to malloc, new and delete which could lock.
-           Everything else is lock-free.
-
-       Exception Safety: Can only throw if malloc, new or delete throws.
-     */
     bool insert(const Key& key, const Value& value)
     {
         log.log(LogMap, "insert", "key=%s, value=%s",
@@ -141,13 +107,6 @@ public:
         return success;
     }
 
-    /* Blah. Same interface as atomic<T>.compare_exchange()
-
-       Thread safety: Issues calls to malloc, new and delete which could lock.
-           Everything else is lock-free.
-
-       Exception Safety: Can only throw if malloc, new or delete throws.
-     */
     bool compareExchange(const Key& key, Value& expected, const Value& desired)
     {
         log.log(LogMap, "cmp-xchg", "key=%s, exp=%s, value=%s",
@@ -164,13 +123,6 @@ public:
     }
 
 
-    /* Blah.
-
-       Thread safety: Issues calls to malloc, new and delete which could lock.
-           Everything else is lock-free.
-
-       Exception Safety: Can only throw if malloc, new or delete throws.
-     */
     std::pair<bool, Value> remove(const Key& key)
     {
         log.log(LogMap, "remove", "key=%s", std::to_string(key).c_str());

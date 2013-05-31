@@ -99,9 +99,6 @@ struct Log
 {
     enum { Size = SizeT };
 
-    /* Blah
-
-     */
     Log() : index(0)
     {
         for (auto& entry : logs) entry.store(nullptr);
@@ -115,9 +112,6 @@ struct Log
 
     size_t size() const { return Size; }
 
-    /* Blah
-
-     */
     template<typename Title, typename Msg>
     void log(LogType type, size_t tick, Title&& title, Msg&& msg)
     {
@@ -133,9 +127,6 @@ struct Log
         if (old) delete old;
     }
 
-    /* Blah
-
-     */
     template<typename Title, typename Msg>
     void log(LogType type, Title&& title, Msg&& msg)
     {
@@ -143,11 +134,6 @@ struct Log
         log(type, tick, std::forward<Title>(title), std::forward<Msg>(msg));
     }
 
-    /* Blah
-
-       \todo GCC has a printf param check builtin. No idea if it works with
-             variadic templates.
-     */
     template<typename Title, typename... Args>
     void log(LogType type, Title&& title, const std::string& fmt, Args&&... args)
     {
@@ -156,9 +142,6 @@ struct Log
         log(type, std::forward<Title>(title), std::string(buffer.data()));
     }
 
-    /* Blah
-
-     */
     std::vector<LogEntry> dump()
     {
         std::vector<LogEntry> dump;
@@ -302,9 +285,6 @@ private:
 /* LOG SINK                                                                   */
 /******************************************************************************/
 
-/* Blah
-
- */
 inline void
 dumpToStream(
         const std::vector<LogEntry>& dump, std::ostream& stream = std::cerr)
@@ -314,9 +294,6 @@ dumpToStream(
     stream << std::flush;
 }
 
-/* Blah
-
- */
 template<typename LogT>
 void logToStream(LogT& log, std::ostream& stream = std::cerr)
 {

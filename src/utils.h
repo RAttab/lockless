@@ -41,6 +41,8 @@ struct MallocDeleter
 /******************************************************************************/
 /* FORMAT                                                                     */
 /******************************************************************************/
+// \todo GCC has a printf param check builtin. No idea if it works with variadic
+// templates.
 
 template<typename... Args>
 std::string format(const std::string& pattern, Args&&... args)
