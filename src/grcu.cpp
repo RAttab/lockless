@@ -248,7 +248,7 @@ enter()
 {
     while (true) {
         size_t epoch = gRcu.epoch;
-        size_t count = getTls()[epoch & 1].count++;
+        getTls()[epoch & 1].count++;
 
         // Prevents reads from taking place before we increment the epoch
         // counter.
@@ -276,7 +276,7 @@ enter()
            moved forward too often (every 1ms is reasonable enough) so this
            branch should fail very rarely.
         */
-        if (epoch == gRcu.epoch || count) return epoch;
+        if ((epoch & 1) == (gRcu.epoch & 1)) return epoch;
 
         getTls()[epoch & 1].count--;
     }
