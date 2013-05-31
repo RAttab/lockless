@@ -135,10 +135,18 @@ struct Log
     }
 
     template<typename Title, typename... Args>
-    void log(LogType type, Title&& title, const std::string& fmt, Args&&... args)
+    void log(LogType type, Title&& title, const char* fmt, const Args&... args)
     {
-        std::string msg = format(fmt.c_str(), std::forward<Args>(args)...);
-        log(type, std::forward<Title>(title), msg);
+        log(type, std::forward<Title>(title), format(fmt, args...));
+    }
+
+    // The gcc's snprintf warnings get a little overzealous if we try to use the
+    // variadic version for a no-args call. Interestingly, it shuts up if we
+    // change fmt to a const std::string&. Why? Who the fuck knows...
+    template<typename Title, typename... Args>
+    void log(LogType type, Title&& title, const char* msg)
+    {
+        log(type, std::forward<Title>(title), std::string(msg));
     }
 
     std::vector<LogEntry> dump()
@@ -202,11 +210,11 @@ struct Log<0>
     {}
 
     template<typename Title, typename... Args>
-    void log(LogType, Title&&, const std::string&, Args&&...)
+    void log(LogType, Title&&, const char*, Args&&...)
     {}
 
     template<typename Title, typename... Args>
-    void log(LogType, Title&&, const char*, Args&&...)
+    void log(LogType, Title&&, const char*)
     {}
 
     std::vector<LogEntry> dump() { return {}; }
