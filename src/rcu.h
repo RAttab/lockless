@@ -75,7 +75,11 @@ struct Rcu
         locklessCheckGt(oldCount, 0ULL, log);
 
 
-        /* Note that we can't decrement the counter before we write the head of
+        /* Note that we can't execute any defered work if we're in current
+           because other may not have been fully vacated yet which that the
+           read-side critical section is still live.
+
+           Note that we can't decrement the counter before we write the head of
            the list because otherwise it could be swapped from under our nose.
 
            It's also possible for the counter to not go to zero after we write
@@ -90,7 +94,7 @@ struct Rcu
            often.
         */
         ListNode<DeferFn>* deferHead = nullptr;
-        if (oldCount == 1) {
+        if (oldCount == 1 && epoch != current) {
             // I don't think this needs to be atomic.
             deferHead = ep.deferList.head.exchange(nullptr);
 

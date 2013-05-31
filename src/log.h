@@ -41,6 +41,7 @@ size_t threadId();
 
 enum LogType
 {
+    LogMisc  = 0x000,
     LogRcu   = 0x100,
     LogQueue = 0x200,
     LogMap   = 0x300,
@@ -139,7 +140,7 @@ struct Log
     void log(LogType type, Title&& title, Msg&& msg)
     {
         size_t tick = details::GlobalLogClock.tick();
-        log(type, tick, std::forward<Title>(title), msg);
+        log(type, tick, std::forward<Title>(title), std::forward<Msg>(msg));
     }
 
     /* Blah

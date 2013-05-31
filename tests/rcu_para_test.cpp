@@ -69,20 +69,31 @@ BOOST_AUTO_TEST_CASE(complexTest)
         Slots = 100,
     };
 
-    const uint64_t MAGIC_VALUE = 0xDEADBEEFDEADBEEFULL;
+    Rcu rcu;
+    Log<1024000> testLog;
+    LogAggregator log(rcu.log, testLog);
 
+    const uint64_t MAGIC_VALUE = 0xDEADBEEFDEADBEEFULL;
     struct Obj
     {
         uint64_t value;
 
         Obj() : value(MAGIC_VALUE) {}
-        ~Obj() { check(); value = 0; }
-        void check() const { locklessCheckEq(value, MAGIC_VALUE, NullLog); }
+        ~Obj() { value = 0; }
     };
 
-    Rcu rcu;
-    atomic<unsigned> doneCount(0);
+    auto check = [&] (Obj* obj) {
+        if (!obj) return;
+        locklessCheckEq(obj->value, MAGIC_VALUE, log);
+    };
+    auto destroy = [&] (Obj* obj) {
+        if (!obj) return;
+        testLog.log(LogMisc, "destroy", "obj=%p", obj);
+        check(obj);
+        delete obj;
+    };
 
+    atomic<unsigned> doneCount(0);
     array< atomic<Obj*>, Slots> slots;
     for (auto& obj : slots) obj.store(nullptr);
 
@@ -91,8 +102,12 @@ BOOST_AUTO_TEST_CASE(complexTest)
             RcuGuard<Rcu> guard(rcu);
 
             for (size_t index = Slots; index > 0; --index) {
-                Obj* obj = slots[index - 1].exchange(new Obj());
-                if (obj) rcu.defer([=] { obj->check(); delete obj; });
+                Obj* newObj = new Obj();
+                Obj* oldObj = slots[index - 1].exchange(newObj);
+                testLog.log(LogMisc, "write", "index=%ld, new=%p, old=%p",
+                        index - 1, newObj, oldObj);
+
+                if (oldObj) rcu.defer( [=] { destroy(oldObj); });
             }
         }
 
@@ -104,8 +119,9 @@ BOOST_AUTO_TEST_CASE(complexTest)
             RcuGuard<Rcu> guard(rcu);
 
             for (size_t index = 0; index < Slots; ++index) {
-                Obj* obj = slots[index].load();
-                if (obj) obj->check();
+                Obj* obj = slots[index];
+                testLog.log(LogMisc, "read", "index=%ld, obj=%p", index, obj);
+                check(obj);
             }
 
         } while (doneCount.load() < WriteThreads);
@@ -116,7 +132,6 @@ BOOST_AUTO_TEST_CASE(complexTest)
     test.add(doReadThread, ReadThreads);
     test.run();
 
-    for (auto& obj : slots) {
-        if (!obj.load()) delete obj.load();
-    }
+    testLog.log(LogMisc, "cleanup", "");
+    for (auto& obj : slots) destroy(obj.load());
 }
