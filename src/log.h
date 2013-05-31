@@ -115,14 +115,13 @@ struct Log
     template<typename Title, typename Msg>
     void log(LogType type, size_t tick, Title&& title, Msg&& msg)
     {
-        size_t i = index.fetch_add(1) % logs.size();
-
         LogEntry* entry = new LogEntry(
                 type, tick,
                 details::threadId(),
                 std::forward<Title>(title),
                 std::forward<Msg>(msg));
 
+        size_t i = index.fetch_add(1) % logs.size();
         LogEntry* old = logs[i].exchange(entry);
         if (old) delete old;
     }
