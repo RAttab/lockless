@@ -136,7 +136,8 @@ struct BlockPage
             md.freeBlocks[i] |= md.recycledBlocks[i].exchange(0ULL);
 
             size_t block = findFreeBlockInBitfield(i);
-            if (block != -1ULL) return block;
+            locklessCheckNe(block, -1ULL, NullLog);
+            return block;
         }
 
         return -1;
