@@ -27,6 +27,7 @@ namespace lockless {
 /******************************************************************************/
 
 void* alignedMalloc(size_t size, size_t allign);
+void alignedFree(void* ptr);
 
 template<typename T, typename... Args>
 T* alignedMalloc(size_t align, Args&&... args)
@@ -39,7 +40,6 @@ T* alignedMalloc(size_t align, Args&&... args)
 /******************************************************************************/
 /* ALLOC POLICY                                                               */
 /******************************************************************************/
-
 
 template<size_t Size>
 struct PackedAllocPolicy
@@ -62,29 +62,30 @@ struct AlignedAllocPolicy
     };
 };
 
-namespace details {
-
-template<typename Policy> struct BlockQueue;
-template<typename Policy> struct BlockPage;
-
-} // namespace details
-
 
 /******************************************************************************/
 /* BLOCK ALLOC                                                                */
 /******************************************************************************/
 
+namespace details { template<typename Policy> struct BlockAllocTls; }
+
+
 template<typename Policy, typename Tag>
 struct BlockAlloc
 {
-    static void* allocBlock();
-    static void freeBlock(void* block);
+    static void* allocBlock()
+    {
+        return allocator.get().allocBlock();
+    }
+
+    static void freeBlock(void* block)
+    {
+        allocator.get().freeBlock(block);
+    }
 
 private:
 
-    static Tls<details::BlockQueue<Policy>, Tag> allocQueue;
-    static Tls<details::BlockQueue<Policy>, Tag> recycleQueue;
-    static Tls<details::BlockPage<Policy>*, Tag> nextRecycledPage;
+    static Tls<details::BlockAllocTls<Policy>, Tag> allocator;
 };
 
 

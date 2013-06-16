@@ -61,9 +61,12 @@ struct BlockPage
     /** data-structure for our allocator. */
     struct Metadata
     {
-        // \todo We should avoid having these two bitfields share a cacheline.
+        // \todo Should be on a different cache line then the next 2 fields.
         uint64_t freeBlocks[BitfieldSize];
+
+        // These two could be on the same cacheline
         std::atomic<uint64_t> recycledBlocks[BitfieldSize];
+        std::atomic<uint64_t> refCount;
 
         BlockPage* next;
 
@@ -88,6 +91,7 @@ struct BlockPage
         fill(begin(md.freeBlocks), end(md.freeBlocks), -1ULL);
         fill(begin(md.recycledBlocks), end(md.recycledBlocks), 0ULL);
         md.next = nullptr;
+        md.refCount = 1ULL << 63;
     }
 
     static BlockPage<Policy>* create()
@@ -99,6 +103,8 @@ struct BlockPage
         return page;
     }
 
+    BlockPage<Policy>* next() const { return md.next; }
+    void next(BlockPage<Policy>* page) { return md.next = page; }
 
     void* allocFromBitfield(size_t index)
     {
@@ -146,6 +152,55 @@ struct BlockPage
     }
 
 
+    /** These two functions manages the refCount such that we can safely delete
+        the page after the function kill() is called.
+
+        Note that this is the only lock-free algorithm in this allocator.
+        Everything else is wait-free. This really sucks but I don't think it's
+        possible to implement this wait-free. On the bright side, this is only
+        used when deallocating which means that allocation are still wait-free.
+     */
+    void enterFree() { md.refCount++; }
+    void exitFree()
+    {
+        bool freePage = false;
+        size_t oldCount = md.refCount;
+
+        do {
+            // Was killed called?
+            if (oldCount & (1ULL << 63)) continue;
+
+            // Are all the blocks deallocated?
+            freePage = true;
+            for (size_t i = 0; freePage && i < BitfieldSize; ++i) {
+                md.recycledBlocks[i] |= md.freeBlocks[i];
+                if (md.recycledBlocks != -1ULL) freePage = false;
+            }
+
+        } while (md.refCount.compare_exchange_strong(oldCount, oldCount - 1));
+
+        /** If freePage is set then all blocks in this page have been freed and
+            there will therefor not be any other threads that can enter this
+            page. If refCount has reached 0 then we're the last thread within
+            this page.
+
+            These two conditions put together mean that we can safely delete the
+            page.
+         */
+        if (freePage && oldCount == 1)
+            alignedFree(this);
+    }
+
+    /** Indicates that the region will no longer be used for allocation and that
+        it should reclaimed whenever it is safe to do so.
+     */
+    void kill()
+    {
+        enterFree();
+        md.refCount &= ~(1ULL << 63);
+        exitFree();
+    }
+
     /** Could be called from multiple threads and should therefor not manipulate
         the freeBlocks bitfield. Instead we only manipulate the recycledBlocks
         bitfield which alloc will apply in batch back into the freeBlocks
@@ -165,7 +220,9 @@ struct BlockPage
         size_t topIndex = block / sizeof(uint64_t);
         size_t subIndex = block % sizeof(uint64_t);
 
+        enterFree();
         md.recycledBlocks[topIndex] |= 1ULL << subIndex;
+        exitFree();
     }
 
     static BlockPage<Policy>* pageForBlock(void* block)
@@ -195,7 +252,7 @@ struct BlockQueue
 
     void pop()
     {
-        head = head->next;
+        head = head->next();
         if (!head) tail = nullptr;
     }
 
@@ -207,13 +264,13 @@ struct BlockQueue
         }
 
         locklessCheck(prev, NullLog);
-        prev->next = page->next;
+        prev->next(page->next());
         if (page == tail) tail = prev;
     }
 
     void pushFront(Page* page)
     {
-        page->next = head;
+        page->next(head);
         head = page;
         if (!tail) tail = head;
     }
@@ -221,12 +278,104 @@ struct BlockQueue
     void pushBack(Page* page)
     {
         if (tail)
-            tail = tail->next = page;
+            tail = tail->next(page);
         pushFront(page);
     }
 
     Page* head;
     Page* tail;
+};
+
+
+/******************************************************************************/
+/* BLOCK ALLOC TLS                                                            */
+/******************************************************************************/
+
+template<typename Policy>
+struct BlockAllocTls
+{
+    typedef BlockPage<Policy> Page;
+
+    BlockQueue<Policy> allocQueue;
+    BlockQueue<Policy> recycledQueue;
+    Page* nextRecycledPage;
+
+    BlockAllocTls() : nextRecycledPage(nullptr) {}
+
+    ~BlockAllocTls()
+    {
+        Page* page;
+
+        while (page = allocQueue.peek()) {
+            allocQueue.pop();
+            page->kill();
+        }
+
+        while (page = recycledQueue.peek()) {
+            recycledQueue.pop();
+            page->kill();
+        }
+    }
+
+    void* allocBlock()
+    {
+        // Attempt to allocate from the alloc queue.
+        Page* page = allocQueue.peek();
+        if (page) {
+            void* ptr = page->alloc();
+            if (ptr) return ptr;
+
+            // No blocks left to allocate, move it to the recycle queue and wait
+            // for a few blocks to free up.
+            allocQueue.pop();
+            recycledQueue.pushBack(page);
+        }
+
+
+        /** We don't want to always check the head of the recycle queue
+            otherwise a single full page at the head could force us to do a
+            linear scan through the entire queue to find a block. That's not
+            good. Instead we maintain a cursor that progressively moves through
+            the recycle queue looking for a page with some free block.
+
+            \todo This could get a little slow if a page is full of rarely
+            released blocks. To help out we could add another queue for pages
+            that failed to yield a block in the recycled queue. Kinda like a
+            generational GC.
+        */
+        Page* prev = nextRecycledPage;
+        page = prev ? prev->next() : recycledQueue.peek();
+
+        if (page) {
+            void* ptr = page->alloc();
+
+            // If we found a block then move it back to the alloc list since it
+            // likely contains more available blocks.
+            if (ptr) {
+                recycledQueue.remove(page, prev);
+                allocQueue.pushBack(page);
+                return ptr;
+            }
+
+            // Oh well, move the cursor to the next page.
+            nextRecycledPage = page;
+        }
+
+        // Couldn't find a block in our queues; create a new page.
+        page = details::BlockPage<Policy>::create();
+        return page ? page->alloc() : nullptr;
+    }
+
+
+    /** Free returns the block to the thread that allocated it which means that
+        this function has to be thread-safe. To keep the allocator as simple as
+        possible, free can't manipulate the allocation queues which means that
+        allocBlock() can is almost entirely single-threaded.
+    */
+    void freeBlock(void* block)
+    {
+        details::BlockPage<Policy>::pageForBlock(block)->free(block);
+    }
 };
 
 } // namespace details
@@ -237,80 +386,9 @@ struct BlockQueue
 /******************************************************************************/
 
 template<typename Policy, typename Tag>
-Tls<details::BlockQueue<Policy>, Tag>
+Tls<details::BlockAllocTls<Policy>, Tag>
 BlockAlloc<Policy, Tag>::
-allocQueue;
-
-template<typename Policy, typename Tag>
-Tls<details::BlockQueue<Policy>, Tag>
-BlockAlloc<Policy, Tag>::
-recycleQueue;
-
-
-template<typename Policy, typename Tag>
-void*
-BlockAlloc<Policy, Tag>::
-allocBlock()
-{
-    // Attempt to allocate from the alloc queue.
-    auto* page = allocQueue.peek();
-    if (page) {
-        void* ptr = page->alloc();
-        if (ptr) return ptr;
-
-        // No blocks left to allocate, move it to the recycle queue and wait for
-        // a few blocks to free up.
-        allocQueue.pop();
-        recycleQueue.pushBack(page);
-    }
-
-
-    /** We don't want to always check the head of the recycle queue otherwise a
-        single full page at the head could force us to do a linear scan through
-        the entire queue to find a block. That's not good. Instead we maintain a
-        cursor that progressively moves through the recycle queue looking for a
-        page with some free block.
-
-        \todo This could get a little slow if a page is full of rarely released
-        blocks. To help out we could add another queue for pages that failed to
-        yield a block in the recycled queue. Kinda like a generational GC.
-    */
-    auto* prev = nextRecycledPage;
-    page = prev ? prev->next : recycleQueue.peek();
-
-    if (page) {
-        void* ptr = page->alloc();
-
-        // If we found a block then move it back to the alloc list since it
-        // likely contains more available blocks.
-        if (ptr) {
-            recycleQueue.remove(page, prev);
-            allocQueue.pushBack(page);
-            return ptr;
-        }
-
-        // Oh well, move the cursor to the next page.
-        nextRecycledPage = page;
-    }
-
-    // Couldn't find a block in our queues; create a new page.
-    page = details::BlockPage<Policy>::create();
-    return page ? page->alloc() : nullptr;
-}
-
-
-/** Free returns the block to the thread that allocated it which means that this
-    function has to be thread-safe. To keep the allocator as simple as possible,
-    free can't manipulate the allocation queues which means that allocBlock()
-    can is almost entirely single-threaded.
- */
-template<typename Policy, typename Tag>
-void
-BlockAlloc<Policy, Tag>::
-freeBlock(void* block)
-{
-    details::BlockPage<Policy>::pageForBlock(block)->free(block);
-}
+allocator;
 
 
 } // lockless

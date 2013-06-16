@@ -26,5 +26,10 @@ void* alignedMalloc(size_t size, size_t align)
     return res ? nullptr : ptr;
 }
 
+void alignedFree(void* ptr)
+{
+    free(ptr);
+}
+
 
 } // lockless
