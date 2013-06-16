@@ -111,6 +111,7 @@ private:
     typedef BlockAlloc<Policy, T> Allocator;
 };
 
+
 } // lockless
 
 #include "alloc.tcc"
