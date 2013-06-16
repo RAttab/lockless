@@ -9,20 +9,30 @@
 #ifndef __lockless__utils_h__
 #define __lockless__utils_h__
 
-#include <cstdlib>
-#include <string>
 #include <array>
+#include <atomic>
+#include <string>
+#include <cstdlib>
 #include <stdio.h>
 
 namespace lockless {
 
 
 /******************************************************************************/
-/* ARCH                                                                       */
+/* CEIL DIV                                                                   */
 /******************************************************************************/
 
-// \todo Configure at build time.
-enum { CacheLine = 64 };
+/** I'm aware that this doesn't take into account the bajillion of corner cases
+    with integer division. That being said, it's only to be used for unsigned
+    integers where underflows are taken care of. I don't believe it's possible
+    to overflow it but it probably is so don't do that...
+*/
+template<size_t Num, size_t Div>
+struct CeilDiv { enum { value = (Num - 1) / Div + 1 }; };
+
+template<size_t Div> struct CeilDiv<  0, Div> { enum { value = 0 }; };
+template<size_t Num> struct CeilDiv<Num,   0> { enum { value = 0 }; };
+template<>           struct CeilDiv<  0,   0> { enum { value = 0 }; };
 
 
 /******************************************************************************/
