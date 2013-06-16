@@ -31,6 +31,10 @@ namespace details {
 template<typename Policy>
 struct BlockPage
 {
+    static_assert(
+            (Policy::PageSize - 1) & Policy::PageSize == 0,
+            "Policy::PageSize must be an exponent of 2");
+
     /** Math. That's what enums are for right? */
     enum
     {
