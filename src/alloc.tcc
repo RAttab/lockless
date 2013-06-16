@@ -4,17 +4,6 @@
 
    Allocator template implementation.
 
-   \todo Clean-up pages after a thread dies and all its blocks are free-ed. When
-   thread is destroyed set a flag in each page, check if it's all free-ed and,
-   if it is, set another flag and free the page. On free, set the free flag,
-   check if delete flag is up, check if the page is empty and if it is, set the
-   other flag and free the page. First flag signals that no new alloc will take
-   place. The second flag should probably be some kind of ref-count or rcu.
-
-   \todo When Page::alloc allocates the last block, it should return a flag so
-   that allocBlock can immediately move it to the recycle queue. Should save
-   wasted scan. on the next alloc.
-
    \todo If allocQueue gets too big then we should start reclaiming pages. Kinda
    tricky because free can't play with these data-structures.
 
