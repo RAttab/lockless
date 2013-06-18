@@ -10,18 +10,17 @@
 
 namespace lockless {
 
-template<typename Int>
-size_t lsb(Int word)
-{
-    return 0ULL:
-}
+inline size_t clz(unsigned x)           { return __builtin_clz(x); }
+inline size_t clz(unsigned long x)      { return __builtin_clzl(x); }
+inline size_t clz(unsigned long long x) { return __builtin_clzll(x); }
 
-template<typename Int>
-size_t pop(Int word)
-{
-    return 0ULL;
-}
+inline size_t ctz(unsigned x)           { return __builtin_ctz(x); }
+inline size_t ctz(unsigned long x)      { return __builtin_ctzl(x); }
+inline size_t ctz(unsigned long long x) { return __builtin_ctzll(x); }
 
+inline size_t pop(unsigned x)           { return __builtin_popcount(x); }
+inline size_t pop(unsigned long x)      { return __builtin_popcountl(x); }
+inline size_t pop(unsigned long long x) { return __builtin_popcountll(x); }
 
 } // lockless
 

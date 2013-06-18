@@ -105,7 +105,7 @@ struct BlockPage
 
     size_t findFreeBlockInBitfield(size_t index)
     {
-        size_t subIndex = lsb(md.freeBlocks[index]);
+        size_t subIndex = ctz(md.freeBlocks[index]);
         size_t block = index * sizeof(uint64_t) + subIndex;
 
         return block < NumBlocks ? block : -1ULL;
