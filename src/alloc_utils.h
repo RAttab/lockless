@@ -24,28 +24,25 @@ namespace details {
 template<size_t Size>
 struct CalcPageAlign
 {
-    enum
-    {
-        multiplier = CalcPageAlign<Size / 2>::multiplier * 2,
-        value = multiplier * PageSize,
-    };
+    locklessEnum size_t multiplier = CalcPageAlign<Size / 2>::multiplier * 2;
+    locklessEnum size_t value = multiplier * PageSize;
 };
 
 template<> struct CalcPageAlign<0>
 {
-    enum { multiplier = 1, value = PageSize };
+    locklessEnum size_t multiplier = 1;
+    locklessEnum size_t value = PageSize;
 };
 
 template<size_t BlockSize, size_t MinBlocks>
 struct CalcPageSize
 {
-    enum {
-        // Ensures that we have enough pages to store at least MinBlocks blocks.
-        unaligned = CeilDiv<BlockSize * MinBlocks, PageSize>::value * PageSize,
+    // Ensures that we have enough pages to store at least MinBlocks blocks.
+    locklessEnum size_t unaligned =
+        CeilDiv<BlockSize * MinBlocks, PageSize>::value * PageSize;
 
-        // Make sure we can easily find the header of our page.
-        value = CalcPageAlign<unaligned / PageSize>::value,
-    };
+    // Make sure we can easily find the header of our page.
+    locklessEnum size_t value = CalcPageAlign<unaligned / PageSize>::value;
 };
 
 } // namespace details

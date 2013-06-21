@@ -44,22 +44,16 @@ T* alignedMalloc(size_t align, Args&&... args)
 template<size_t Size>
 struct PackedAllocPolicy
 {
-    enum
-    {
-        BlockSize = Size,
-        PageSize  = details::CalcPageSize<BlockSize, 64>::value,
-    };
+    locklessEnum size_t BlockSize = Size;
+    locklessEnum size_t PageSize  = details::CalcPageSize<BlockSize, 64>::value;
 };
 
 
 template<size_t Size, size_t Align = 8>
 struct AlignedAllocPolicy
 {
-    enum
-    {
-        BlockSize = CeilDiv<Size, Align>::value * Align,
-        PageSize  = details::CalcPageSize<BlockSize, 64>::value,
-    };
+    locklessEnum size_t BlockSize = CeilDiv<Size, Align>::value * Align;
+    locklessEnum size_t PageSize  = details::CalcPageSize<BlockSize, 64>::value;
 };
 
 

@@ -19,6 +19,17 @@ namespace lockless {
 
 
 /******************************************************************************/
+/* STATIC COMP                                                                */
+/******************************************************************************/
+
+/** \todo Still undecided about whether it's a good idea to have this... */
+#define locklessEnum static constexpr
+
+#define locklessStaticAssert(x) \
+    static_assert(x, #x)
+
+
+/******************************************************************************/
 /* CEIL DIV                                                                   */
 /******************************************************************************/
 
@@ -28,11 +39,14 @@ namespace lockless {
     to overflow it but it probably is so don't do that...
 */
 template<size_t Num, size_t Div>
-struct CeilDiv { enum { value = (Num - 1) / Div + 1 }; };
+struct CeilDiv
+{
+    locklessEnum size_t value = (Num - 1) / Div + 1;
+};
 
-template<size_t Div> struct CeilDiv<  0, Div> { enum { value = 0 }; };
-template<size_t Num> struct CeilDiv<Num,   0> { enum { value = 0 }; };
-template<>           struct CeilDiv<  0,   0> { enum { value = 0 }; };
+template<size_t Div> struct CeilDiv<  0, Div> { locklessEnum size_t value = 0; };
+template<size_t Num> struct CeilDiv<Num,   0> { locklessEnum size_t value = 0; };
+template<>           struct CeilDiv<  0,   0> { locklessEnum size_t value = 0; };
 
 
 /******************************************************************************/

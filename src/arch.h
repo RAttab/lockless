@@ -8,18 +8,17 @@
 #ifndef __lockless__arch_h__
 #define __lockless__arch_h__
 
-namespace lockless {
+#include "utils.h"
 
+namespace lockless {
 
 /******************************************************************************/
 /* CONSTANTS                                                                  */
 /******************************************************************************/
 
 // \todo Configure at build time.
-enum {
-    CacheLine = 64,
-    PageSize  = 4096,
-};
+locklessEnum size_t CacheLine = 64;
+locklessEnum size_t PageSize  = 4096;
 
 
 } // lockless

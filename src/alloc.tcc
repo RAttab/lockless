@@ -35,21 +35,26 @@ struct BlockPage
             (Policy::PageSize - 1) & Policy::PageSize == 0,
             "Policy::PageSize must be an exponent of 2");
 
-    /** Math. That's what enums are for right? */
-    enum
-    {
-        TotalBlocks = CeilDiv<Policy::PageSize, Policy::BlockSize>::value,
+    locklessEnum size_t TotalBlocks =
+        CeilDiv<Policy::PageSize, Policy::BlockSize>::value;
 
-        // Upper bound on the size of our bitfield.
-        BitfieldEstimate = CeilDiv<TotalBlocks, sizeof(uint64_t)>::value,
+    // Upper bound on the size of our bitfield.
+    locklessEnum size_t BitfieldEstimate =
+        CeilDiv<TotalBlocks, sizeof(uint64_t)>::value;
 
-        MetadataSize = BitfieldEstimate * 2 + sizeof(BlockPage*),
-        MetadataBlocks = CeilDiv<Policy::BlockSize, MetadataSize>::value,
-        MetadataPadding = Policy::BlockSize - (MetadataSize % Policy::BlockSize),
+    locklessEnum size_t MetadataSize =
+        BitfieldEstimate * 2 + sizeof(BlockPage*);
 
-        NumBlocks = TotalBlocks - MetadataBlocks,
-        BitfieldSize = CeilDiv<NumBlocks, sizeof(uint64_t)>::value,
-    };
+    locklessEnum size_t MetadataBlocks =
+        CeilDiv<Policy::BlockSize, MetadataSize>::value;
+
+    locklessEnum size_t MetadataPadding =
+        Policy::BlockSize - (MetadataSize % Policy::BlockSize);
+
+    locklessEnum size_t NumBlocks = TotalBlocks - MetadataBlocks;
+
+    locklessEnum size_t BitfieldSize =
+        CeilDiv<NumBlocks, sizeof(uint64_t)>::value;
 
 
     /** data-structure for our allocator. */

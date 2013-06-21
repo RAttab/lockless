@@ -97,7 +97,7 @@ struct LogEntry
 template<size_t SizeT>
 struct Log
 {
-    enum { Size = SizeT };
+    locklessEnum size_t Size = SizeT;
 
     Log() : index(0)
     {
@@ -191,7 +191,7 @@ private:
 template<>
 struct Log<0>
 {
-    enum { Size = 0 };
+    locklessEnum size_t Size = 0;
 
     Log() {}
 

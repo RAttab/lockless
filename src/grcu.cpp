@@ -351,7 +351,7 @@ struct GcThreadImpl
 
 void doGcThread()
 {
-    enum { MaxSleepMs = 1000 };
+    locklessEnum size_t MaxSleepMs = 1000;
     size_t sleepMs = 1;
 
     auto& log = gcThread.log;
