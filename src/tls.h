@@ -20,7 +20,7 @@ namespace lockless {
 /******************************************************************************/
 
 // Thread local storage.
-#define LOCKLESS_TLS __thread __attribute__(( tls_model("initial-exec") ))
+#define locklessTls __thread __attribute__(( tls_model("initial-exec") ))
 
 
 /******************************************************************************/
@@ -125,15 +125,15 @@ private:
     Fn constructFn;
     Fn destructFn;
 
-    static LOCKLESS_TLS T* value;
-    static LOCKLESS_TLS pthread_key_t key;
+    static locklessTls T* value;
+    static locklessTls pthread_key_t key;
 };
 
 template<typename T, typename Tag>
-LOCKLESS_TLS T* Tls<T, Tag>::value = nullptr;
+locklessTls T* Tls<T, Tag>::value = nullptr;
 
 template<typename T, typename Tag>
-LOCKLESS_TLS pthread_key_t Tls<T, Tag>::key;
+locklessTls pthread_key_t Tls<T, Tag>::key;
 
 } // lockless
 

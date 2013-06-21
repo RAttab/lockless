@@ -31,7 +31,7 @@ namespace {
 
 atomic<size_t> GlobalThreadCounter{1};
 
-LOCKLESS_TLS size_t LocalThreadId{0};
+locklessTls size_t LocalThreadId{0};
 
 } // namespace anonymous
 
