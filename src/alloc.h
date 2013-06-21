@@ -69,11 +69,15 @@ struct BlockAlloc
 {
     static void* allocBlock()
     {
+        if (!Policy::BlockSize) return nullptr;
+
         return allocator.get().allocBlock();
     }
 
     static void freeBlock(void* block)
     {
+        if (!Policy::BlockSize) return;
+
         allocator.get().freeBlock(block);
     }
 
