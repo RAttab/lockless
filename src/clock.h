@@ -9,6 +9,8 @@
 #ifndef __lockless__clock_h__
 #define __lockless__clock_h__
 
+#include "utils.h"
+
 #include <atomic>
 #include <type_traits>
 
@@ -22,7 +24,7 @@ namespace lockless {
 template<typename T>
 struct Clock
 {
-    static_assert(std::is_integral<T>::value, "std::is_integral<T>::value");
+    locklessStaticAssert(std::is_integral<T>::value);
 
     Clock() : ticks(0) {}
 

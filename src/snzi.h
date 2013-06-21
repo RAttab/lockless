@@ -47,8 +47,8 @@ namespace lockless {
 template<size_t Nodes, size_t Arity = 2>
 struct Snzi
 {
-    static_assert(Nodes > 0, "Nodes > 0");
-    static_assert(Arity > 1, "Arity > 1");
+    lockessStatiAssert(Nodes > 0);
+    locklessStaticAssert(Arity > 1);
 
     Snzi()
     {

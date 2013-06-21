@@ -31,9 +31,7 @@ namespace details {
 template<typename Policy>
 struct BlockPage
 {
-    static_assert(
-            (Policy::PageSize - 1) & Policy::PageSize == 0,
-            "Policy::PageSize must be an exponent of 2");
+    locklessStaticAssert((Policy::PageSize - 1) & Policy::PageSize == 0ULL);
 
     locklessEnum size_t TotalBlocks =
         CeilDiv<Policy::PageSize, Policy::BlockSize>::value;
@@ -77,12 +75,8 @@ struct BlockPage
     uint8_t blocks[NumBlocks][Policy::BlockSize];
 
 
-    static_assert(
-            sizeof(md) == MetadataBlocks * Policy::BlockSize,
-            "Inconsistent metadata size");
-    static_assert(
-            (sizeof(md) + sizeof(blocks)) <= Policy::PageSize,
-            "Inconsistent page size");
+    locklessStaticAssert(sizeof(md) == MetadataBlocks * Policy::BlockSize);
+    locklessStaticAssert(sizeof(md) + sizeof(blocks) <= Policy::PageSize);
 
 
     void init()
