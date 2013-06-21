@@ -39,6 +39,10 @@ namespace lockless {
 #   define LOCKLESS_SNZI_DEBUG 0
 #endif
 
+#ifndef LOCKLESS_ALLOC_DEBUG
+#   define LOCKLESS_ALLOC_DEBUG 0
+#endif
+
 #ifndef LOCKLESS_CHECK_ABORT
 #   define LOCKLESS_CHECK_ABORT 0
 #endif
@@ -51,6 +55,7 @@ enum DebugFlags
     DebugList  = LOCKLESS_LIST_DEBUG,
     DebugMap   = LOCKLESS_MAP_DEBUG,
     DebugSnzi  = LOCKLESS_SNZI_DEBUG,
+    DebugAlloc = LOCKLESS_ALLOC_DEBUG,
 
     CheckAbort = LOCKLESS_CHECK_ABORT,
 };

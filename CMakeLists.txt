@@ -102,3 +102,5 @@ lockless_test(queue_perf)
 
 lockless_test(map)
 lockless_test(map_para)
+
+lockless_test(alloc)
