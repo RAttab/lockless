@@ -33,7 +33,8 @@ template<typename T, typename... Args>
 T* alignedMalloc(size_t align, Args&&... args)
 {
     void* ptr = alignedMalloc(sizeof(T), align);
-    return new (ptr) T(std::forward<Args>(args)...);
+    new (ptr) T(std::forward<Args>(args)...);
+    return reinterpret_cast<T*>(ptr);
 }
 
 

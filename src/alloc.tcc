@@ -11,9 +11,11 @@
 
 #include "check.h"
 #include "alloc.h"
+#include "bits.h"
 
 #include <array>
 #include <atomic>
+#include <iterator>
 #include <algorithm>
 
 
@@ -31,7 +33,7 @@ namespace details {
 template<typename Policy>
 struct BlockPage
 {
-    locklessStaticAssert((Policy::PageSize - 1) & Policy::PageSize == 0ULL);
+    locklessStaticAssert(((Policy::PageSize - 1) & Policy::PageSize) == 0ULL);
 
     locklessEnum size_t TotalBlocks =
         CeilDiv<Policy::PageSize, Policy::BlockSize>::value;
@@ -59,10 +61,10 @@ struct BlockPage
     struct Metadata
     {
         // \todo Should be on a different cache line then the next 2 fields.
-        uint64_t freeBlocks[BitfieldSize];
+        std::array<uint64_t, BitfieldSize> freeBlocks;
 
         // These two could be on the same cacheline
-        std::atomic<uint64_t> recycledBlocks[BitfieldSize];
+        std::array<std::atomic< uint64_t>, BitfieldSize> recycledBlocks;
         std::atomic<uint64_t> refCount;
 
         BlockPage* next;
@@ -72,7 +74,7 @@ struct BlockPage
 
 
     /** Storage for our blocks. */
-    uint8_t blocks[NumBlocks][Policy::BlockSize];
+    std::array<uint8_t[Policy::BlockSize], NumBlocks> blocks;
 
 
     locklessStaticAssert(sizeof(md) == MetadataBlocks * Policy::BlockSize);
@@ -82,17 +84,15 @@ struct BlockPage
     void init()
     {
         // may want to go for a memset here.
-        fill(begin(md.freeBlocks), end(md.freeBlocks), -1ULL);
-        fill(begin(md.recycledBlocks), end(md.recycledBlocks), 0ULL);
+        std::fill(md.freeBlocks.begin(), md.freeBlocks.end(), -1ULL);
+        std::fill(md.recycledBlocks.begin(), md.recycledBlocks.end(), 0ULL);
         md.next = nullptr;
         md.refCount = 1ULL << 63;
     }
 
     static BlockPage<Policy>* create()
     {
-        auto* page = alignedMalloc<BlockPage<Policy>*>(
-                Policy::PageSize, Policy::PageSize);
-
+        auto* page = alignedMalloc< BlockPage<Policy> >(Policy::PageSize);
         if (page) page->init();
         return page;
     }
@@ -183,7 +183,7 @@ struct BlockPage
             freePage = true;
             for (size_t i = 0; freePage && i < BitfieldSize; ++i) {
                 md.recycledBlocks[i] |= md.freeBlocks[i];
-                if (md.recycledBlocks != -1ULL) freePage = false;
+                if (md.recycledBlocks[i] != -1ULL) freePage = false;
             }
 
         } while (md.refCount.compare_exchange_strong(oldCount, oldCount - 1));
@@ -225,7 +225,9 @@ struct BlockPage
         locklessCheckGt(ptr, this, NullLog);
         locklessCheckLt(ptr, this + sizeof(*this), NullLog);
 
-        size_t block = (ptr - this) / Policy::BlockSize - MetadataBlocks;
+        size_t block =
+            (uintptr_t(ptr) - uintptr_t(this)) /
+            Policy::BlockSize - MetadataBlocks;
         locklessCheckLt(block, NumBlocks, NullLog);
 
         size_t topIndex = block / sizeof(uint64_t);
@@ -239,7 +241,7 @@ struct BlockPage
     static BlockPage<Policy>* pageForBlock(void* block)
     {
         return reinterpret_cast<BlockPage<Policy>*>(
-                block & ~(Policy::PageSize - 1));
+                uintptr_t(block) & ~(Policy::PageSize - 1));
     }
 };
 
