@@ -28,6 +28,13 @@ namespace lockless {
 #define locklessStaticAssert(x) \
     static_assert(x, #x)
 
+template<size_t X>
+struct IsPow2
+{
+    locklessEnum bool value = (X & (X - 1ULL)) == 0ULL;
+};
+
+
 
 /******************************************************************************/
 /* CEIL DIV                                                                   */
@@ -59,6 +66,34 @@ struct MallocDeleter
     {
         free(ptr);
     }
+};
+
+
+/******************************************************************************/
+/* PADDING                                                                    */
+/******************************************************************************/
+
+/** Work-around for two problems:
+    - C++ doesn't like zero sized arrays.
+    - sizeof(struct{}) == 1
+
+    Since I don't know of any other way to get a zero sized object in C++ then I
+    have no choice but to asume that there's always going to be at least 1 byte
+    dedicated to padding regardless of whether it's needed or not.
+
+    For the record, I hate this solution and I hate whoever decided that
+    sizeof(struct{}) should be 1.
+ */
+template<size_t Size, size_t Align>
+struct Padding
+{
+    locklessStaticAssert(IsPow2<Align>::value);
+
+    locklessEnum size_t Leftover = Size % Align;
+    locklessEnum size_t PadBytes =
+        Align == 1 ? 1 : (Leftover ? Align - Leftover : Align);
+
+    uint8_t padding[PadBytes];
 };
 
 
