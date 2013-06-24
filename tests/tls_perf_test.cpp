@@ -38,7 +38,7 @@ void doTlsThread(unsigned, unsigned itCount)
 /******************************************************************************/
 // \todo Need an attribute to disable optimizations on this one.
 
-LOCKLESS_TLS size_t gccTls;
+locklessTls size_t gccTls;
 
 void doGccThread(unsigned, unsigned itCount)
 {
