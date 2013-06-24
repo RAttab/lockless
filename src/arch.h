@@ -21,6 +21,9 @@ locklessEnum size_t CacheLine = 64;
 locklessEnum size_t PageSize  = 4096;
 
 
+#define locklessAlign(x) __attribute__ ((aligned(x)))
+#define locklessPacked __attribute__ ((__packed__))
+
 } // lockless
 
 #endif // __lockless__arch_h__
