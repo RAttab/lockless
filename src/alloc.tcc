@@ -170,7 +170,7 @@ struct BlockPage
         used when deallocating which means that allocation are still wait-free.
      */
     void enterFree() { md.refCount++; }
-    void exitFree()
+    bool exitFree()
     {
         bool freePage = false;
         size_t oldCount = md.refCount;
@@ -194,19 +194,21 @@ struct BlockPage
             within this page and since no other threads can access this page
             then it's safe to delete the page.
          */
-        if (freePage && oldCount == 1)
-            alignedFree(this);
+        if (!freePage || oldCount > 1) return false;
+
+        alignedFree(this);
+        return true;
     }
 
 
     /** Indicates that the page will no longer be used for allocation and that
         it should be reclaimed whenever it is safe to do so.
      */
-    void kill()
+    bool kill()
     {
         enterFree();
         md.refCount &= ~(1ULL << 63);
-        exitFree();
+        return exitFree();
     }
 
 
@@ -218,7 +220,7 @@ struct BlockPage
         This scheme has the effect of reducing the amount of synchronization
         between the allocation thread and the deallocation threads.
      */
-    void free(void* ptr)
+    bool free(void* ptr)
     {
         locklessCheckGt(ptr, this, NullLog);
         locklessCheckLt(ptr, this + sizeof(*this), NullLog);
@@ -231,7 +233,7 @@ struct BlockPage
 
         enterFree();
         md.recycledBlocks[topIndex] |= 1ULL << subIndex;
-        exitFree();
+        return exitFree();
     }
 
     static BlockPage<Policy>* pageForBlock(void* block)
