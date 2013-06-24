@@ -8,6 +8,8 @@
 #define BOOST_TEST_MAIN
 #define BOOST_TEST_DYN_LINK
 
+#define LOCKLESS_ALLOC_DEBUG 1
+
 #include "alloc.h"
 #include "check.h"
 #include "debug.h"
@@ -30,10 +32,11 @@ using namespace lockless::details;
 /******************************************************************************/
 
 #define SIZE_SEQ                                                        \
-    (0x01) (0x02) (0x03) (0x04) (0x05) (0x06) (0x07) (0x08) (0x0C)      \
-    (0x10) (0x11) (0x18) (0x20) (0x30) (0x40) (0x80) (0x8F) (0xCF)      \
-    (0x0100) (0x0111) (0x0200) (0x0400) (0x0800) (0x1000) (0x1111)      \
-    (0x00010000) (0x00100000) (0x01000000) (0x01111111) (0xFFFFFFFF)
+    (0x01)
+    // (0x02) (0x03) (0x04) (0x05) (0x06) (0x07) (0x08) (0x0C)
+    // (0x10) (0x11) (0x18) (0x20) (0x30) (0x40) (0x80) (0x8F) (0xCF)
+    // (0x0100) (0x0111) (0x0200) (0x0400) (0x0800) (0x1000) (0x1111)
+    // (0x00010000) (0x00100000) (0x01000000) (0x01111111) (0xFFFFFFFF)
 
 void checkPow2(size_t val)
 {
@@ -47,13 +50,13 @@ void checkAlign(size_t val, size_t align)
 }
 
 template<typename Policy>
-void fillBlock(void* block, size_t value = 0ULL)
+void fillBlock(void* block, uint8_t value = 0)
 {
-    memset(block, Policy::BlockSize, value);
+    memset(block, value, Policy::BlockSize);
 }
 
 template<typename Policy>
-void checkBlock(void* block, size_t value = 0ULL)
+void checkBlock(void* block, uint8_t value = 0)
 {
     uint8_t* pBlock = reinterpret_cast<uint8_t*>(block);
     auto pred = [=] (uint8_t val) { return val == value; };
@@ -79,7 +82,7 @@ void checkPolicy(const std::function<void (size_t, size_t)>& fn)
 BOOST_AUTO_TEST_CASE(policyTest)
 {
 
-    cerr << fmtTitle("PackedAllocPolicy", '=') << endl;
+    cerr << fmtTitle("policy - packed", '=') << endl;
 
     auto checkFn = [] (size_t blockSize, size_t pageSize) {
         checkPow2(pageSize);
@@ -97,7 +100,7 @@ BOOST_AUTO_TEST_CASE(policyTest)
 #undef PackedAllocPolicyTest
 
 
-    cerr << fmtTitle("AlignedAllocPolicy", '=') << endl;
+    cerr << fmtTitle("policy - aligned", '=') << endl;
 
     auto checkAlignFn = [&] (size_t blockSize, size_t pageSize) {
         checkFn(blockSize, pageSize);
@@ -130,6 +133,48 @@ BlockPage<Policy>* createPage()
     locklessCheck(page->hasFreeBlock(), NullLog);
 
     return page;
+}
+
+template<typename Policy>
+void printPageMd()
+{
+    typedef BlockPage<Policy> Page;
+
+    cerr << fmtTitle(
+            "block=" + to_string(Policy::BlockSize) +
+            ", page=" + to_string(Policy::PageSize))
+        << endl;
+
+    typedef CalcPageSize<Policy::BlockSize, 64> Calc;
+
+    size_t sizeofMd = sizeof(typename Page::Metadata);
+    size_t sizeofPadding = sizeof(typename Page::MetadataPadding);
+
+    cerr << "\ttotal      " << Page::TotalBlocks << endl
+        << "\tbfEstimate " << Page::BitfieldEstimate << endl
+        << "\tmdSize     " << Page::MetadataSize << endl
+        << "\tmdBlocks   " << Page::MetadataBlocks << endl
+        << "\tmdPadding  " << Page::MetadataPadding::PadBytes << endl
+        << "\t           " << sizeofPadding << endl
+        << "\tmdPadSize  " << Page::MetadataPaddedSize << endl
+        << "\tnumBlocks  " << Page::NumBlocks << endl
+        << "\tbfSize     " << Page::BitfieldSize << endl
+        << endl
+        << "\tsizeofBlck " << sizeof(Page::blocks) << endl
+        << "\tsizeofMd   " << sizeofMd << endl
+        << "\t           " << sizeof(Page::md) << endl
+        << "\t           " << (Page::MetadataBlocks * Policy::BlockSize) << endl
+        << "\tsizeofPage " << sizeof(Page) << endl
+        << "\t           " << (sizeof(Page::md) + sizeof(Page::blocks)) << endl
+        << "\tassert     "
+        << (sizeof(Page::md) + sizeof(Page::blocks) <= Policy::PageSize) << endl
+        << endl
+        << "\tmd.free    " << sizeof(Page::Metadata::freeBlocks) << endl
+        << "\tmd.rec     " << sizeof(Page::Metadata::recycledBlocks) << endl
+        << "\tmd.ref     " << sizeof(Page::Metadata::refCount) << endl
+        << "\tmd.next    " << sizeof(Page::Metadata::next) << endl
+        << "\tmd.padding " << sizeof(Page::Metadata::padding) << endl
+        << endl;
 }
 
 
@@ -363,18 +408,22 @@ void checkPageRandom()
 template<typename Policy>
 void checkPage()
 {
+
+    printPageMd<Policy>();
     checkPageMd<Policy>();
 
     if (!Policy::BlockSize) return;
 
-    checkPageKill<Policy>();
-    checkPageAlloc<Policy>();
-    checkPageFull<Policy>();
-    checkPageRandom<Policy>();
+    // checkPageKill<Policy>();
+    // checkPageAlloc<Policy>();
+    // checkPageFull<Policy>();
+    // checkPageRandom<Policy>();
 }
 
 BOOST_AUTO_TEST_CASE(pageTest)
 {
+
+    cerr << fmtTitle("page - packed", '=') << endl;
 
 #define PackedPageTest(_r_, _data_, _elem_)    \
     checkPage< PackedAllocPolicy<_elem_> >();
@@ -383,6 +432,7 @@ BOOST_AUTO_TEST_CASE(pageTest)
 
 #undef PackedPageTest
 
+    cerr << fmtTitle("page - aligned", '=') << endl;
 
 #define AlignedPageTest(_r_, _data_, _elem_)    \
     checkPage< AlignedAllocPolicy<_elem_> >();

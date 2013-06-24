@@ -22,39 +22,42 @@
 namespace lockless {
 namespace details {
 
-
 /******************************************************************************/
 /* BLOCK PAGE                                                                 */
 /******************************************************************************/
 
 /** Chunk of memory that contains the blocks to be allocated along with the
     data-structure to keep track of those blocks.
+
+    \todo I'm starting to think I should do all of this dynamically... Would be
+    far more flexible and wouldn't have the current padding headache...
  */
 template<typename Policy>
 struct BlockPage
 {
-    locklessStaticAssert(((Policy::PageSize - 1) & Policy::PageSize) == 0ULL);
+    locklessStaticAssert(IsPow2<Policy::PageSize>::value);
 
     locklessEnum size_t TotalBlocks =
         CeilDiv<Policy::PageSize, Policy::BlockSize>::value;
 
     // Upper bound on the size of our bitfield.
-    locklessEnum size_t BitfieldEstimate =
-        CeilDiv<TotalBlocks, sizeof(uint64_t)>::value;
+    locklessEnum size_t BitfieldEstimate = CeilDiv<TotalBlocks, 64>::value;
 
     locklessEnum size_t MetadataSize =
-        BitfieldEstimate * 2 + sizeof(BlockPage*);
+        BitfieldEstimate * 2 * sizeof(uint64_t) + // freeBlocks + recycledBlocks
+        sizeof(BlockPage*) +                      // next
+        sizeof(uint64_t);                         // refCount
+
+    typedef Padding<MetadataSize, Policy::BlockSize> MetadataPadding;
+
+    locklessEnum size_t MetadataPaddedSize =
+        MetadataSize + sizeof(MetadataPadding);
 
     locklessEnum size_t MetadataBlocks =
-        CeilDiv<Policy::BlockSize, MetadataSize>::value;
-
-    locklessEnum size_t MetadataPadding =
-        Policy::BlockSize - (MetadataSize % Policy::BlockSize);
+        CeilDiv<MetadataPaddedSize, Policy::BlockSize>::value;
 
     locklessEnum size_t NumBlocks = TotalBlocks - MetadataBlocks;
-
-    locklessEnum size_t BitfieldSize =
-        CeilDiv<NumBlocks, sizeof(uint64_t)>::value;
+    locklessEnum size_t BitfieldSize = CeilDiv<NumBlocks, 64>::value;
 
 
     /** data-structure for our allocator. */
@@ -64,20 +67,20 @@ struct BlockPage
         std::array<uint64_t, BitfieldSize> freeBlocks;
 
         // These two could be on the same cacheline
-        std::array<std::atomic< uint64_t>, BitfieldSize> recycledBlocks;
+        std::array<std::atomic<uint64_t>, BitfieldSize> recycledBlocks;
         std::atomic<uint64_t> refCount;
 
         BlockPage* next;
 
-        uint8_t padding[MetadataPadding];
+        MetadataPadding padding;
     } md;
+
+    locklessStaticAssert(sizeof(md) <= MetadataPaddedSize);
 
 
     /** Storage for our blocks. */
     std::array<uint8_t[Policy::BlockSize], NumBlocks> blocks;
 
-
-    locklessStaticAssert(sizeof(md) == MetadataBlocks * Policy::BlockSize);
     locklessStaticAssert(sizeof(md) + sizeof(blocks) <= Policy::PageSize);
 
 
