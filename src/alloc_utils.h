@@ -25,13 +25,11 @@ template<size_t Size>
 struct CalcPageAlign
 {
     locklessEnum size_t multiplier = CalcPageAlign<Size / 2>::multiplier * 2;
-    locklessEnum size_t value = multiplier * PageSize;
 };
 
-template<> struct CalcPageAlign<0>
+template<> struct CalcPageAlign<1>
 {
     locklessEnum size_t multiplier = 1;
-    locklessEnum size_t value = PageSize;
 };
 
 template<size_t BlockSize, size_t MinBlocks>
@@ -39,10 +37,10 @@ struct CalcPageSize
 {
     // Ensures that we have enough pages to store at least MinBlocks blocks.
     locklessEnum size_t unaligned =
-        CeilDiv<BlockSize * MinBlocks, PageSize>::value * PageSize;
+        CeilDiv<BlockSize * MinBlocks, PageSize>::value;
 
     // Make sure we can easily find the header of our page.
-    locklessEnum size_t value = CalcPageAlign<unaligned / PageSize>::value;
+    locklessEnum size_t value = CalcPageAlign<unaligned>::multiplier * PageSize;
 };
 
 } // namespace details
