@@ -23,6 +23,12 @@
 namespace lockless {
 namespace details {
 
+// The log statements are too complicated to be disabled in the usual manner so
+// instead we mass disable them using this macro.
+#if 1
+#  define log(...)
+#endif
+
 
 /******************************************************************************/
 /* UTILS                                                                      */

@@ -349,6 +349,7 @@ void checkPageRandom()
     cerr << fmtTitle("random", '.') << endl;
 
     typedef BlockPage<Policy> Page;
+    auto& log = Page::log;
 
     static mt19937_64 rng;
     uniform_int_distribution<size_t> actionRnd(0, 10);
@@ -378,40 +379,40 @@ void checkPageRandom()
     };
 
     auto killPage = [&] (Page* page) {
-        locklessCheck(active.erase(page), NullLog);
+        locklessCheck(active.erase(page), log);
 
         if (hasBlocks(page)) {
-            locklessCheck(!page->kill(), NullLog);
-            locklessCheck(killed.insert(page).second, NullLog);
+            locklessCheck(!page->kill(), log);
+            locklessCheck(killed.insert(page).second, log);
         }
-        else locklessCheck(page->kill(), NullLog);
+        else locklessCheck(page->kill(), log);
     };
 
     auto freeBlock = [&] (void* block) {
         checkBlock<Policy>(block, 1ULL);
-        locklessCheck(allocated.erase(block), NullLog);
+        locklessCheck(allocated.erase(block), log);
 
         Page* page = Page::pageForBlock(block);
 
         if (active.count(page))
-            locklessCheck(!page->free(block), NullLog);
+            locklessCheck(!page->free(block), log);
 
         else if (killed.count(page)) {
             if (!hasBlocks(page)) {
-                locklessCheck(page->free(block), NullLog);
+                locklessCheck(page->free(block), log);
                 killed.erase(page);
             }
-            else locklessCheck(!page->free(block), NullLog);
+            else locklessCheck(!page->free(block), log);
         }
 
-        else locklessCheck(false, NullLog);
+        else locklessCheck(false, log);
     };
 
-    for (size_t iterations = 0; iterations < 1000; ++iterations) {
+    for (size_t iterations = 0; iterations < 100; ++iterations) {
         unsigned action = actionRnd(rng);
 
         if ((active.empty() && killed.empty()) || action < 1)
-            locklessCheck(active.insert(createPage<Policy>()).second, NullLog);
+            locklessCheck(active.insert(createPage<Policy>()).second, log);
 
         else if (!active.empty() && action < 2)
             killPage(*rndPage(active));
@@ -422,7 +423,7 @@ void checkPageRandom()
 
             void* block = (*pageIt)->alloc();
             fillBlock<Policy>(block, 1ULL);
-            locklessCheck(allocated.insert(block).second, NullLog);
+            locklessCheck(allocated.insert(block).second, log);
         }
 
         else if (!allocated.empty())
@@ -445,7 +446,7 @@ void checkPage()
 
     checkPageKill<Policy>();
     checkPageAlloc<Policy>();
-    // checkPageFull<Policy>();
+    checkPageFull<Policy>();
     // checkPageRandom<Policy>();
 }
 
