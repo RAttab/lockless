@@ -21,8 +21,8 @@ BOOST_AUTO_TEST_CASE(basicTest)
 {
     Log<2> log;
 
-    log.log(LogRcu, "T0", "boo!");
-    log.log(LogMap, "T1", "number=%d", 42);
+    log(LogRcu, "T0", "boo!");
+    log(LogMap, "T1", "number=%d", 42);
 
     auto d0 = log.dump();
     locklessCheckEq(d0.size(), 2ULL, NullLog);
@@ -32,7 +32,7 @@ BOOST_AUTO_TEST_CASE(basicTest)
     locklessCheckEq(d0[1].title, "T1", NullLog);
     locklessCheckLt(d0[0].tick, d0[1].tick, NullLog);
 
-    log.log(LogQueue, "T2", "blah");
+    log(LogQueue, "T2", "blah");
 
     auto d1 = log.dump();
     locklessCheckEq(d1.size(), 1ULL, NullLog);

@@ -88,7 +88,7 @@ BOOST_AUTO_TEST_CASE(complexTest)
     };
     auto destroy = [&] (Obj* obj) {
         if (!obj) return;
-        testLog.log(LogMisc, "destroy", "obj=%p", obj);
+        testLog(LogMisc, "destroy", "obj=%p", obj);
         check(obj);
         delete obj;
     };
@@ -104,7 +104,7 @@ BOOST_AUTO_TEST_CASE(complexTest)
             for (size_t index = Slots; index > 0; --index) {
                 Obj* newObj = new Obj();
                 Obj* oldObj = slots[index - 1].exchange(newObj);
-                testLog.log(LogMisc, "write", "index=%ld, new=%p, old=%p",
+                testLog(LogMisc, "write", "index=%ld, new=%p, old=%p",
                         index - 1, newObj, oldObj);
 
                 if (oldObj) rcu.defer( [=] { destroy(oldObj); });
@@ -120,7 +120,7 @@ BOOST_AUTO_TEST_CASE(complexTest)
 
             for (size_t index = 0; index < Slots; ++index) {
                 Obj* obj = slots[index];
-                testLog.log(LogMisc, "read", "index=%ld, obj=%p", index, obj);
+                testLog(LogMisc, "read", "index=%ld, obj=%p", index, obj);
                 check(obj);
             }
 
@@ -132,6 +132,6 @@ BOOST_AUTO_TEST_CASE(complexTest)
     test.add(doReadThread, ReadThreads);
     test.run();
 
-    testLog.log(LogMisc, "cleanup", "");
+    testLog(LogMisc, "cleanup", "");
     for (auto& obj : slots) destroy(obj.load());
 }

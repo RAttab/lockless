@@ -59,7 +59,7 @@ struct Queue
 
         Entry* entry = new Entry(std::forward<T2>(value));
 
-        log.log(LogQueue, "push-0", "value=%s, entry=%p",
+        log(LogQueue, "push-0", "value=%s, entry=%p",
                 std::to_string(value).c_str(), entry);
 
         while(true) {
@@ -71,7 +71,7 @@ struct Queue
             // Avoids spinning on a CAS in high contention scenarios.
             if (tail.load() != oldTail) continue;
 
-            log.log(LogQueue, "push-1", "tail=%p, next=%p", oldTail, oldNext);
+            log(LogQueue, "push-1", "tail=%p, next=%p", oldTail, oldNext);
 
             if (!oldNext) {
                 if (!oldTail->next.compare_exchange_weak(oldNext, entry))
@@ -127,7 +127,7 @@ struct Queue
     {
         RcuGuard<Rcu> guard(rcu);
 
-        log.log(LogQueue, "pop-0", "");
+        log(LogQueue, "pop-0", "");
 
         while(true) {
             Entry* oldHead = head.load();
@@ -142,7 +142,7 @@ struct Queue
             // Avoids spinning on a CAS in high contention scenarios.
             if (head.load() != oldHead) continue;
 
-            log.log(LogQueue, "pop-1", "head=%p, next=%p, tail=%p",
+            log(LogQueue, "pop-1", "head=%p, next=%p, tail=%p",
                     oldHead, oldNext, oldTail);
 
             if (oldHead == oldTail) {
@@ -165,7 +165,7 @@ struct Queue
             // copy its value and delete the old sentinel oldHead.
             T value = std::move(oldNext->value);
 
-            log.log(LogQueue, "pop-2", "value=%s, entry=%p",
+            log(LogQueue, "pop-2", "value=%s, entry=%p",
                     std::to_string(value).c_str(), oldNext);
 
             rcu.defer([=] { delete oldHead; });

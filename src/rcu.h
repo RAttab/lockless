@@ -76,7 +76,7 @@ struct Rcu
             epochs[epoch & 1].count--;
         }
 
-        log.log(LogRcu, "enter", "epoch=%ld, count=%ld",
+        log(LogRcu, "enter", "epoch=%ld, count=%ld",
                 epoch, epochs[epoch & 1].count);
 
         size_t oldOther = epoch - 1;
@@ -94,7 +94,7 @@ struct Rcu
         auto& ep = epochs[epoch & 1];
 
         size_t oldCount = ep.count;
-        log.log(LogRcu, "exit", "epoch=%ld, count=%ld", epoch, oldCount);
+        log(LogRcu, "exit", "epoch=%ld, count=%ld", epoch, oldCount);
         locklessCheckGt(oldCount, 0ULL, log);
 
 
@@ -121,7 +121,7 @@ struct Rcu
             // I don't think this needs to be atomic.
             deferHead = ep.deferList.head.exchange(nullptr);
 
-            log.log(LogRcu, "exit-defer", "epoch=%ld, head=%p",
+            log(LogRcu, "exit-defer", "epoch=%ld, head=%p",
                     epoch, deferHead);
         }
 
@@ -143,7 +143,7 @@ struct Rcu
         size_t epoch = current;
         epochs[epoch & 1].deferList.push(node);
 
-        log.log(LogRcu, "add-defer", "epoch=%ld, head=%p", epoch, node);
+        log(LogRcu, "add-defer", "epoch=%ld, head=%p", epoch, node);
     }
 
     std::string print() const
@@ -161,7 +161,7 @@ private:
 
     void doDeferred(ListNode<DeferFn>* node)
     {
-        log.log(LogRcu, "do-defer", "head=%p", node);
+        log(LogRcu, "do-defer", "head=%p", node);
 
         while (node) {
             node->value();

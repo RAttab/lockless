@@ -75,7 +75,7 @@ public:
 
     void resize(size_t capacity)
     {
-        log.log(LogMap, "resize", "capacity=%ld", capacity);
+        log(LogMap, "resize", "capacity=%ld", capacity);
 
         RcuGuard<Rcu> guard(rcu);
         resizeImpl(table.load(), adjustCapacity(capacity));
@@ -83,7 +83,7 @@ public:
 
     std::pair<bool, Value> find(const Key& key)
     {
-        log.log(LogMap, "find", "key=%s", std::to_string(key).c_str());
+        log(LogMap, "find", "key=%s", std::to_string(key).c_str());
 
         RcuGuard<Rcu> guard(rcu);
         return findImpl(table.load(), hashFn(key), key);
@@ -91,7 +91,7 @@ public:
 
     bool insert(const Key& key, const Value& value)
     {
-        log.log(LogMap, "insert", "key=%s, value=%s",
+        log(LogMap, "insert", "key=%s, value=%s",
                 std::to_string(key).c_str(), std::to_string(value).c_str());
 
         RcuGuard<Rcu> guard(rcu);
@@ -109,7 +109,7 @@ public:
 
     bool compareExchange(const Key& key, Value& expected, const Value& desired)
     {
-        log.log(LogMap, "cmp-xchg", "key=%s, exp=%s, value=%s",
+        log(LogMap, "cmp-xchg", "key=%s, exp=%s, value=%s",
                 std::to_string(key).c_str(),
                 std::to_string(expected).c_str(),
                 std::to_string(desired).c_str());
@@ -125,7 +125,7 @@ public:
 
     std::pair<bool, Value> remove(const Key& key)
     {
-        log.log(LogMap, "remove", "key=%s", std::to_string(key).c_str());
+        log(LogMap, "remove", "key=%s", std::to_string(key).c_str());
 
         RcuGuard<Rcu> guard(rcu);
 

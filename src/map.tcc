@@ -161,7 +161,7 @@ doMoveBucket(Table* t, Bucket& bucket)
 {
     if (!t->isResizing()) return false;
 
-    log.log(LogMap, "move-0", "table=%p, next=%p", t, t->nextTable());
+    log(LogMap, "move-0", "table=%p, next=%p", t, t->nextTable());
 
     moveBucket(t->nextTable(), bucket);
     return true;
@@ -311,7 +311,7 @@ moveBucket(Table* dest, Bucket& src)
     size_t tombstones = 0;
     for (size_t i = 0; i < ProbeWindow; ++i) {
         size_t probeBucket = this->bucket(hash, i, dest->capacity);
-        log.log(LogMap, "probe",
+        log(LogMap, "probe",
                 "table=%p, capacity=%ld, bucket=%ld",
                 dest, dest->capacity, probeBucket);
         Bucket& bucket = dest->buckets[probeBucket];
@@ -322,7 +322,7 @@ moveBucket(Table* dest, Bucket& src)
 
         KeyAtom destKeyAtom = bucket.keyAtom.load();
 
-        log.log(LogMap, "mov-1", "bucket=%ld, srcKey=%s, destKey=%s",
+        log(LogMap, "mov-1", "bucket=%ld, srcKey=%s, destKey=%s",
                 probeBucket,
                 fmtAtom<MKey>(srcKeyAtom).c_str(),
                 fmtAtom<MKey>(destKeyAtom).c_str());
@@ -475,7 +475,7 @@ insertImpl(
         ValueAtom valueAtom,
         DeallocAtom dealloc)
 {
-    log.log(LogMap, "insert-0", "table=%p", t);
+    log(LogMap, "insert-0", "table=%p", t);
 
     using namespace details;
 
@@ -486,7 +486,7 @@ insertImpl(
 
     for (size_t i = 0; i < ProbeWindow; ++i) {
         size_t probeBucket = this->bucket(hash, i, t->capacity);
-        log.log(LogMap, "probe",
+        log(LogMap, "probe",
                 "table=%p, capacity=%ld, bucket=%ld",
                 t, t->capacity, probeBucket);
         Bucket& bucket = t->buckets[probeBucket];
@@ -496,7 +496,7 @@ insertImpl(
 
         KeyAtom bucketKeyAtom = bucket.keyAtom.load();
 
-        log.log(LogMap, "ins-1", "bucket=%ld, key=%s, ins=%s",
+        log(LogMap, "ins-1", "bucket=%ld, key=%s, ins=%s",
                 probeBucket,
                 fmtAtom<MKey>(bucketKeyAtom).c_str(),
                 fmtAtom<MKey>(keyAtom).c_str());
@@ -560,7 +560,7 @@ insertImpl(
         // we fail.
         while (true) {
 
-            log.log(LogMap, "ins-2", "bucket=%ld, value=%s, ins=%s",
+            log(LogMap, "ins-2", "bucket=%ld, value=%s, ins=%s",
                     probeBucket,
                     fmtAtom<MValue>(bucketValueAtom).c_str(),
                     fmtAtom<MValue>(valueAtom).c_str());
@@ -594,7 +594,7 @@ insertImpl(
         }
     }
 
-    log.log(LogMap, "ins-3", "tombs=%ld, t=%p", tombstones, t);
+    log(LogMap, "ins-3", "tombs=%ld, t=%p", tombstones, t);
 
     // The key is definetively not in this table, try the next.
     doResize(t, tombstones);
@@ -620,7 +620,7 @@ Map<Key, Value, Hash, MKey, MValue>::
 findImpl(Table* t, const size_t hash, const Key& key)
     -> std::pair<bool, Value>
 {
-    log.log(LogMap, "find-0", "table=%p", t);
+    log(LogMap, "find-0", "table=%p", t);
 
     using namespace details;
 
@@ -628,7 +628,7 @@ findImpl(Table* t, const size_t hash, const Key& key)
 
     for (size_t i = 0; i < ProbeWindow; ++i) {
         size_t probeBucket = this->bucket(hash, i, t->capacity);
-        log.log(LogMap, "probe",
+        log(LogMap, "probe",
                 "table=%p, capacity=%ld, bucket=%ld",
                 t, t->capacity, probeBucket);
         Bucket& bucket = t->buckets[probeBucket];
@@ -639,7 +639,7 @@ findImpl(Table* t, const size_t hash, const Key& key)
 
         KeyAtom keyAtom = bucket.keyAtom.load();
 
-        log.log(LogMap, "fnd-1", "bucket=%ld, key=%s, target=%s",
+        log(LogMap, "fnd-1", "bucket=%ld, key=%s, target=%s",
                 probeBucket,
                 fmtAtom<MKey>(keyAtom).c_str(),
                 std::to_string(key).c_str());
@@ -666,7 +666,7 @@ findImpl(Table* t, const size_t hash, const Key& key)
 
         ValueAtom valueAtom = bucket.valueAtom.load();
 
-        log.log(LogMap, "fnd-2", "bucket=%ld, value=%s",
+        log(LogMap, "fnd-2", "bucket=%ld, value=%s",
                 probeBucket, fmtAtom<MKey>(valueAtom).c_str());
 
         // We might be in the middle of a move op so try the bucket again so
@@ -690,7 +690,7 @@ findImpl(Table* t, const size_t hash, const Key& key)
                 true, ValueAtomizer::load(clearMarks<MValue>(valueAtom)));
     }
 
-    log.log(LogMap, "fnd-3", "tomb=%ld, t=%p", tombstones, t);
+    log(LogMap, "fnd-3", "tomb=%ld, t=%p", tombstones, t);
 
     // The key is definetively not in this table, try the next.
     doResize(t, tombstones);
@@ -713,7 +713,7 @@ compareExchangeImpl(
         Value& expected,
         ValueAtom desired)
 {
-    log.log(LogMap, "xch-0", "table=%p", t);
+    log(LogMap, "xch-0", "table=%p", t);
 
     using namespace details;
 
@@ -723,7 +723,7 @@ compareExchangeImpl(
 
     for (size_t i = 0; i < ProbeWindow; ++i) {
         size_t probeBucket = this->bucket(hash, i, t->capacity);
-        log.log(LogMap, "probe",
+        log(LogMap, "probe",
                 "table=%p, capacity=%ld, bucket=%ld",
                 t, t->capacity, probeBucket);
         Bucket& bucket = t->buckets[probeBucket];
@@ -734,7 +734,7 @@ compareExchangeImpl(
 
         KeyAtom keyAtom = bucket.keyAtom.load();
 
-        log.log(LogMap, "xch-1", "bucket=%ld, key=%s, target=%s",
+        log(LogMap, "xch-1", "bucket=%ld, key=%s, target=%s",
                 probeBucket,
                 fmtAtom<MKey>(keyAtom).c_str(),
                 std::to_string(key).c_str());
@@ -762,7 +762,7 @@ compareExchangeImpl(
 
         while (true) {
 
-            log.log(LogMap, "xch-2",
+            log(LogMap, "xch-2",
                     "bucket=%ld, value=%s, expected=%s, desired=%s",
                     probeBucket,
                     fmtAtom<MValue>(valueAtom).c_str(),
@@ -801,7 +801,7 @@ compareExchangeImpl(
         }
     }
 
-    log.log(LogMap, "xch-3", "tomb=%ld, t=%p", tombstones, t);
+    log(LogMap, "xch-3", "tomb=%ld, t=%p", tombstones, t);
 
     // The key is definetively not in this table, try the next.
     doResize(t, tombstones);
@@ -825,7 +825,7 @@ Map<Key, Value, Hash, MKey, MValue>::
 removeImpl(Table* t, const size_t hash, const Key& key)
     -> std::pair<bool, Value>
 {
-    log.log(LogMap, "remove-0", "table=%p", t);
+    log(LogMap, "remove-0", "table=%p", t);
 
     using namespace details;
 
@@ -833,7 +833,7 @@ removeImpl(Table* t, const size_t hash, const Key& key)
 
     for (size_t i = 0; i < ProbeWindow; ++i) {
         size_t probeBucket = this->bucket(hash, i, t->capacity);
-        log.log(LogMap, "probe",
+        log(LogMap, "probe",
                 "table=%p, capacity=%ld, bucket=%ld",
                 t, t->capacity, probeBucket);
         Bucket& bucket = t->buckets[probeBucket];
@@ -844,7 +844,7 @@ removeImpl(Table* t, const size_t hash, const Key& key)
 
         KeyAtom keyAtom = bucket.keyAtom.load();
 
-        log.log(LogMap, "rmv-1", "bucket=%ld, key=%s, target=%s",
+        log(LogMap, "rmv-1", "bucket=%ld, key=%s, target=%s",
                 probeBucket,
                 fmtAtom<MKey>(keyAtom).c_str(),
                 std::to_string(key).c_str());
@@ -867,7 +867,7 @@ removeImpl(Table* t, const size_t hash, const Key& key)
 
         ValueAtom valueAtom = bucket.valueAtom.load();
 
-        log.log(LogMap, "rmv-2", "bucket=%ld, value=%s",
+        log(LogMap, "rmv-2", "bucket=%ld, value=%s",
                 probeBucket, fmtAtom<MKey>(valueAtom).c_str());
 
         // We may be in the middle of a move so try the bucket again.
@@ -885,7 +885,7 @@ removeImpl(Table* t, const size_t hash, const Key& key)
         // the bucket again.
         KeyAtom newKeyAtom = setTombstone<MKey>(keyAtom);
 
-        log.log(LogMap, "rmv-3", "bucket=%ld, newKey=%s",
+        log(LogMap, "rmv-3", "bucket=%ld, newKey=%s",
                 probeBucket, fmtAtom<MKey>(newKeyAtom).c_str());
 
         if (!bucket.keyAtom.compare_exchange_strong(keyAtom, newKeyAtom)) {
@@ -897,7 +897,7 @@ removeImpl(Table* t, const size_t hash, const Key& key)
         // op. Also prevent any further replace op by tombstoning the value.
         ValueAtom newValueAtom = setTombstone<MValue>(valueAtom);
 
-        log.log(LogMap, "rmv-4", "bucket=%ld, newValue=%s",
+        log(LogMap, "rmv-4", "bucket=%ld, newValue=%s",
                 probeBucket, fmtAtom<MKey>(newValueAtom).c_str());
 
         valueAtom = bucket.valueAtom.exchange(newValueAtom);
@@ -911,7 +911,7 @@ removeImpl(Table* t, const size_t hash, const Key& key)
         return std::make_pair(true, ValueAtomizer::load(valueAtom));
     }
 
-    log.log(LogMap, "rmv-5", "tomb=%ld, table=%p", tombstones, t);
+    log(LogMap, "rmv-5", "tomb=%ld, table=%p", tombstones, t);
 
     // The key is definetively not in this table, try the next.
     doResize(t, tombstones);
@@ -942,7 +942,7 @@ void
 Map<Key, Value, Hash, MKey, MValue>::
 resizeImpl(Table* start, size_t newCapacity, bool force)
 {
-    log.log(LogMap, "rsz-0", "start=%p, newCapacity=%ld, force=%d",
+    log(LogMap, "rsz-0", "start=%p, newCapacity=%ld, force=%d",
             start, newCapacity, force);
 
     using namespace details;
@@ -956,7 +956,7 @@ resizeImpl(Table* start, size_t newCapacity, bool force)
     bool done = false;
 
     do {
-        log.log(LogMap, "rsz-1",
+        log(LogMap, "rsz-1",
                 "prev=%p, prevTable=%p, curTable=%p, curCapacity=%ld, next=%p",
                 prev, prevTable, curTable,
                 curTable ? curTable->capacity : 0,
@@ -984,7 +984,7 @@ resizeImpl(Table* start, size_t newCapacity, bool force)
 
     Table* newTable = safeNewTable.release();
 
-    log.log(LogMap, "rsz-2", "prev=%p, prevTable=%p, next=%p, new=%p",
+    log(LogMap, "rsz-2", "prev=%p, prevTable=%p, next=%p, new=%p",
             prev, prevTable, prev->load(), newTable);
 
     if (!prevTable) return;
@@ -1008,7 +1008,7 @@ resizeImpl(Table* start, size_t newCapacity, bool force)
     while(curTable) {
         curTable = Table::clearMark(curTable);
 
-        log.log(LogMap, "rsz-3", "prev=%p, cur=%p, next=%p, target=%p",
+        log(LogMap, "rsz-3", "prev=%p, cur=%p, next=%p, target=%p",
                 prev, curTable, curTable->next.load(), toRemove);
 
         if (curTable != toRemove) {
@@ -1042,11 +1042,11 @@ resizeImpl(Table* start, size_t newCapacity, bool force)
         goto restart;
     }
 
-    log.log(LogMap, "defer", "table=%p, prev=%p, next=%p",
+    log(LogMap, "defer", "table=%p, prev=%p, next=%p",
             toRemove, prev, prev->load());
 
     rcu.defer([=] {
-                this->log.log(LogMap, "free", "table=%p", toRemove);
+                this->log(LogMap, "free", "table=%p", toRemove);
                 std::free(toRemove);
             });
 }
