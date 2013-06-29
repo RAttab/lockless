@@ -163,13 +163,13 @@ inline std::string to_string(const std::string& str) { return str; }
 template<typename T>
 std::string to_string(T* p)
 {
-    return std::to_string(reinterpret_cast<void*>(p));
+    return lockless::format("%p", p);
 }
 
 template<typename T>
 std::string to_string(const T* p)
 {
-    return std::to_string(reinterpret_cast<const void*>(p));
+    return lockless::format("%p", p);
 }
 
 template<typename First, typename Second>
