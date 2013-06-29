@@ -140,7 +140,7 @@ std::string format(const std::string& pattern, const Args&... args)
 template<typename... Args>
 std::string format(const char* pattern, const Args&... args)
 {
-    std::array<char, 256> buffer;
+    std::array<char, 1024> buffer;
 
     size_t chars = snprintf(
             buffer.data(), buffer.size(), pattern, unwrap(args)...);
