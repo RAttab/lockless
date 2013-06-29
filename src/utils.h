@@ -73,28 +73,33 @@ struct MallocDeleter
 /* PADDING                                                                    */
 /******************************************************************************/
 
-/** Work-around for two problems:
-    - C++ doesn't like zero sized arrays.
-    - sizeof(struct{}) == 1
+namespace details {
 
-    Since I don't know of any other way to get a zero sized object in C++ then I
-    have no choice but to asume that there's always going to be at least 1 byte
-    dedicated to padding regardless of whether it's needed or not.
+template<size_t Size> struct Padding    { uint8_t padding[Size]; };
+template<>            struct Padding<0> {};
 
-    For the record, I hate this solution and I hate whoever decided that
-    sizeof(struct{}) should be 1.
- */
-template<size_t Size, size_t Align>
-struct Padding
+template<typename T, size_t Align>
+struct CalcPadding
 {
-    locklessStaticAssert(IsPow2<Align>::value);
-
-    locklessEnum size_t Leftover = Size % Align;
-    locklessEnum size_t PadBytes =
-        Align == 1 ? 1 : (Leftover ? Align - Leftover : Align);
-
-    uint8_t padding[PadBytes];
+    locklessEnum size_t leftover = sizeof(T) % Align;
+    locklessEnum size_t value = leftover ? Align - leftover : 0;
 };
+
+} // namespace details
+
+
+/** Since C++ doesn't any zero sized types we have to use some weirdo C++
+    optimization whereby deriving from a empty struct will not take up any extra
+    space.
+
+    We use multiple inheritence so that our padding (if any) is after the
+    original struct.
+ */
+template<typename T, size_t Align>
+struct Pad :
+        public T,
+        private details::Padding<details::CalcPadding<T, Align>::value>
+{};
 
 
 /******************************************************************************/
