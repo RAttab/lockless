@@ -54,10 +54,11 @@ string to_string(LogType type)
 {
     // Try to to keep the same number of char for each.
     switch (type) {
-    case LogMisc:  return "Misc ";
+    case LogMisc:  return " Msc ";
     case LogRcu:   return " Rcu ";
     case LogQueue: return "Queue";
     case LogMap:   return " Map ";
+    case LogAlloc: return "Alloc";
     default:       return "-----";
     }
 }

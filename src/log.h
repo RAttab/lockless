@@ -45,6 +45,7 @@ enum LogType
     LogRcu   = 0x100,
     LogQueue = 0x200,
     LogMap   = 0x300,
+    LogAlloc = 0x400,
 };
 
 std::string to_string(LogType type);
@@ -139,6 +140,14 @@ struct Log
         log(type, std::forward<Title>(title), format(fmt, args...));
     }
 
+    template<typename Title, typename... Args>
+    void operator() (
+            LogType type, Title&& title, const char* fmt, const Args&... args)
+    {
+        log(type, std::forward<Title>(title), format(fmt, args...));
+    }
+
+
     // The gcc's snprintf warnings get a little overzealous if we try to use the
     // variadic version for a no-args call. Interestingly, it shuts up if we
     // change fmt to a const std::string&. Why? Who the fuck knows...
@@ -147,6 +156,13 @@ struct Log
     {
         log(type, std::forward<Title>(title), std::string(msg));
     }
+
+    template<typename Title, typename... Args>
+    void operator() (LogType type, Title&& title, const char* msg)
+    {
+        log(type, std::forward<Title>(title), std::string(msg));
+    }
+
 
     std::vector<LogEntry> dump()
     {
@@ -213,7 +229,15 @@ struct Log<0>
     {}
 
     template<typename Title, typename... Args>
+    void operator() (LogType, Title&&, const char*, Args&&...)
+    {}
+
+    template<typename Title, typename... Args>
     void log(LogType, Title&&, const char*)
+    {}
+
+    template<typename Title, typename... Args>
+    void operator() (LogType, Title&&, const char*)
     {}
 
     std::vector<LogEntry> dump() { return {}; }
