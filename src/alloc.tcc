@@ -10,6 +10,7 @@
 */
 
 #include "check.h"
+#include "log.h"
 #include "alloc.h"
 #include "bits.h"
 
@@ -21,6 +22,39 @@
 
 namespace lockless {
 namespace details {
+
+
+/******************************************************************************/
+/* UTILS                                                                      */
+/******************************************************************************/
+
+std::string printBitfield(size_t index, uint64_t val)
+{
+    if (val == -1ULL) return format("%d:F ", index);
+    if (val == 0ULL) return format("%d:0 ", index);
+    return format("%d:%p ", index, val);
+}
+
+template<typename Array>
+std::string printBitfield(const Array& arr, size_t size, uint64_t base)
+{
+    std::string str;
+
+    for (size_t i = 0; i < size; ++i) {
+        if (arr[i] == base) continue;
+        str += printBitfield(i, arr[i]);
+    }
+
+    return str;
+}
+
+std::string printRefCount(size_t val)
+{
+    size_t mask = 1ULL << 63;
+    if (val & mask) return std::to_string(val & ~mask);
+    return format("{k,%ld}", val);
+}
+
 
 /******************************************************************************/
 /* BLOCK PAGE                                                                 */
@@ -43,44 +77,35 @@ struct BlockPage
     // Upper bound on the size of our bitfield.
     locklessEnum size_t BitfieldEstimate = CeilDiv<TotalBlocks, 64>::value;
 
-    locklessEnum size_t MetadataSize =
-        BitfieldEstimate * 2 * sizeof(uint64_t) + // freeBlocks + recycledBlocks
-        sizeof(BlockPage*) +                      // next
-        sizeof(uint64_t);                         // refCount
-
-    typedef Padding<MetadataSize, Policy::BlockSize> MetadataPadding;
-
-    locklessEnum size_t MetadataPaddedSize =
-        MetadataSize + sizeof(MetadataPadding);
-
-    locklessEnum size_t MetadataBlocks =
-        CeilDiv<MetadataPaddedSize, Policy::BlockSize>::value;
-
-    locklessEnum size_t NumBlocks = TotalBlocks - MetadataBlocks;
-    locklessEnum size_t BitfieldSize = CeilDiv<NumBlocks, 64>::value;
-
 
     /** data-structure for our allocator. */
     struct Metadata
     {
         // \todo Should be on a different cache line then the next 2 fields.
-        std::array<uint64_t, BitfieldSize> freeBlocks;
+        std::array<uint64_t, BitfieldEstimate> freeBlocks;
 
-        // These two could be on the same cacheline
-        std::array<std::atomic<uint64_t>, BitfieldSize> recycledBlocks;
+        std::array<std::atomic<uint64_t>, BitfieldEstimate> recycledBlocks;
+
         std::atomic<uint64_t> refCount;
-
         BlockPage* next;
+    };
 
-        MetadataPadding padding;
-    } md;
+    Pad<Metadata, Policy::BlockSize> md;
 
-    locklessStaticAssert(sizeof(md) <= MetadataPaddedSize);
+    locklessEnum size_t MetadataBlocks =
+        CeilDiv<sizeof(md), Policy::BlockSize>::value;
+
+    locklessEnum size_t NumBlocks = TotalBlocks - MetadataBlocks;
+
+    // Actual bound on the size of our bitfield.
+    locklessEnum size_t BitfieldSize = CeilDiv<NumBlocks, 64>::value;
 
 
     /** Storage for our blocks. */
     std::array<uint8_t[Policy::BlockSize], NumBlocks> blocks;
 
+
+    locklessStaticAssert(sizeof(md) % Policy::BlockSize == 0ULL);
     locklessStaticAssert(sizeof(md) + sizeof(blocks) <= Policy::PageSize);
 
 
@@ -91,6 +116,8 @@ struct BlockPage
         std::fill(md.recycledBlocks.begin(), md.recycledBlocks.end(), 0ULL);
         md.next = nullptr;
         md.refCount = 1ULL << 63;
+
+        log(LogAlloc, "init", "page=%p", this);
     }
 
     static BlockPage<Policy>* create()
@@ -108,7 +135,11 @@ struct BlockPage
     size_t findFreeBlockInBitfield(size_t index)
     {
         size_t subIndex = ctz(md.freeBlocks[index]);
-        size_t block = index * sizeof(uint64_t) + subIndex;
+        size_t block = index * 64 + subIndex;
+
+        log(LogAlloc, "find", "page=%p, bf=%s, sub=%ld, block=%ld",
+                this, printBitfield(index, md.freeBlocks[index]).c_str(),
+                subIndex, block);
 
         return block < NumBlocks ? block : -1ULL;
     }
@@ -138,7 +169,7 @@ struct BlockPage
             md.freeBlocks[i] |= md.recycledBlocks[i].exchange(0ULL);
 
             size_t block = findFreeBlockInBitfield(i);
-            locklessCheckNe(block, -1ULL, NullLog);
+            locklessCheckNe(block, -1ULL, log);
             return block;
         }
 
@@ -153,13 +184,21 @@ struct BlockPage
     /** Completely wait-free allocation of a block. */
     void* alloc()
     {
-        size_t block = findFreeBlock();
+        const size_t block = findFreeBlock();
+
+        log(LogAlloc, "alloc-0", "page=%p, block=%ld %s",
+                this, block, print().c_str());
+
         if (block == -1ULL) return nullptr;
 
-        size_t topIndex = block / sizeof(uint64_t);
-        size_t subIndex = block % sizeof(uint64_t);
+        const size_t topIndex = block / 64;
+        const size_t subIndex = block % 64;
 
-        md.freeBlocks[topIndex] |= 1ULL << subIndex;
+        log(LogAlloc, "alloc-1", "page=%p, bf=%s, sub=%ld, ptr=%p",
+                this, printBitfield(topIndex, md.freeBlocks[topIndex]).c_str(),
+                subIndex, &blocks[block]);
+
+        md.freeBlocks[topIndex] &= ~(1ULL << subIndex);
         return reinterpret_cast<void*>(&blocks[block]);
     }
 
@@ -179,8 +218,13 @@ struct BlockPage
         size_t oldCount = md.refCount;
 
         do {
+            log(LogAlloc, "exit-0", "page=%p, oldCount=%s",
+                    this, printRefCount(oldCount).c_str());
+
             // Was killed called?
             if (oldCount & (1ULL << 63)) continue;
+
+            log(LogAlloc, "exit-1", "page=%p, %s", this, print().c_str());
 
             // Are all the blocks deallocated?
             freePage = true;
@@ -190,6 +234,8 @@ struct BlockPage
             }
 
         } while (md.refCount.compare_exchange_strong(oldCount, oldCount - 1));
+
+        log(LogAlloc, "exit-2", "page=%p, free=%d", this, freePage);
 
         /** If freePage is set then all blocks in this page have been freed and
             there will therefor not be any other threads that can increment
@@ -225,16 +271,18 @@ struct BlockPage
      */
     bool free(void* ptr)
     {
-        locklessCheckGt(ptr, this, NullLog);
-        locklessCheckLt(ptr, this + sizeof(*this), NullLog);
+        locklessCheckGt(ptr, this, log);
+        locklessCheckLt(ptr, this + sizeof(*this), log);
 
         size_t block =
-            (uintptr_t(ptr) - uintptr_t(this)) /
-            Policy::BlockSize - MetadataBlocks;
-        locklessCheckLt(block, NumBlocks, NullLog);
+            (uintptr_t(ptr) - uintptr_t(this)) / Policy::BlockSize
+            - MetadataBlocks;
 
-        size_t topIndex = block / sizeof(uint64_t);
-        size_t subIndex = block % sizeof(uint64_t);
+        log(LogAlloc, "free-0", "page=%p, ptr=%p, block=%ld", this, ptr, block);
+        locklessCheckLt(block, NumBlocks, log);
+
+        size_t topIndex = block / 64;
+        size_t subIndex = block % 64;
 
         enterFree();
         md.recycledBlocks[topIndex] |= 1ULL << subIndex;
@@ -246,7 +294,25 @@ struct BlockPage
         return reinterpret_cast<BlockPage<Policy>*>(
                 uintptr_t(block) & ~(Policy::PageSize - 1));
     }
+
+    std::string print() const
+    {
+        std::string freeStr =
+            printBitfield(md.freeBlocks, BitfieldSize, -1ULL);
+
+        std::string recycledStr =
+            printBitfield(md.recycledBlocks, BitfieldSize, 0);
+
+        return format("ref=%s, next=%p, free=[ %s], rec=[ %s]",
+                printRefCount(md.refCount).c_str(),
+                md.next, freeStr.c_str(), recycledStr.c_str());
+    }
+
+    static DebuggingLog<10240, DebugAlloc>::type log;
 };
+
+template<typename Policy>
+DebuggingLog<10240, DebugAlloc>::type BlockPage<Policy>::log;
 
 
 /******************************************************************************/

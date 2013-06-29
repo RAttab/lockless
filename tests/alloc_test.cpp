@@ -9,6 +9,7 @@
 #define BOOST_TEST_DYN_LINK
 
 #define LOCKLESS_ALLOC_DEBUG 1
+#define LOCKLESS_CHECK_ABORT 1
 
 #include "alloc.h"
 #include "check.h"
@@ -132,6 +133,17 @@ BlockPage<Policy>* createPage()
     locklessCheck(!page->next(), NullLog);
     locklessCheck(page->hasFreeBlock(), NullLog);
 
+    locklessCheckEq(uintptr_t(page), uintptr_t(&page->md), NullLog);
+    locklessCheckGe(
+            uintptr_t(&page->blocks),
+            uintptr_t(&page->md) + sizeof(typename Page::Metadata),
+            NullLog);
+
+    locklessCheckEq(
+            uintptr_t(page) + (Page::MetadataBlocks * Policy::BlockSize),
+            uintptr_t(&page->blocks),
+            NullLog);
+
     return page;
 }
 
@@ -148,15 +160,13 @@ void printPageMd()
     typedef CalcPageSize<Policy::BlockSize, 64> Calc;
 
     size_t sizeofMd = sizeof(typename Page::Metadata);
-    size_t sizeofPadding = sizeof(typename Page::MetadataPadding);
+    size_t sizeofPadding = sizeof(Page::md) - sizeofMd;
 
     cerr << "\ttotal      " << Page::TotalBlocks << endl
         << "\tbfEstimate " << Page::BitfieldEstimate << endl
-        << "\tmdSize     " << Page::MetadataSize << endl
+        << "\tmdSize     " << sizeofMd << endl
+        << "\tpadSize    " << sizeofPadding << endl
         << "\tmdBlocks   " << Page::MetadataBlocks << endl
-        << "\tmdPadding  " << Page::MetadataPadding::PadBytes << endl
-        << "\t           " << sizeofPadding << endl
-        << "\tmdPadSize  " << Page::MetadataPaddedSize << endl
         << "\tnumBlocks  " << Page::NumBlocks << endl
         << "\tbfSize     " << Page::BitfieldSize << endl
         << endl
@@ -173,7 +183,6 @@ void printPageMd()
         << "\tmd.rec     " << sizeof(Page::Metadata::recycledBlocks) << endl
         << "\tmd.ref     " << sizeof(Page::Metadata::refCount) << endl
         << "\tmd.next    " << sizeof(Page::Metadata::next) << endl
-        << "\tmd.padding " << sizeof(Page::Metadata::padding) << endl
         << endl;
 }
 
@@ -181,10 +190,11 @@ void printPageMd()
 template<typename Policy>
 void checkPageMd()
 {
+    cerr << fmtTitle("md", '.') << endl;
+
     typedef BlockPage<Policy> Page;
 
-    checkPow2(sizeof(Page));
-    locklessCheckEq(sizeof(Page), Policy::PageSize, NullLog);
+    locklessCheckLe(sizeof(Page), Policy::PageSize, NullLog);
     locklessCheckGe(Page::BitfieldSize * 64, Page::NumBlocks, NullLog);
     locklessCheckGe(Page::TotalBlocks, 64ULL, NullLog);
 }
@@ -193,10 +203,14 @@ void checkPageMd()
 template<typename Policy>
 void checkPageKill()
 {
+    cerr << fmtTitle("kill", '.') << endl;
+
     typedef BlockPage<Policy> Page;
     array<void*, Page::NumBlocks> blocks;
 
-    locklessCheck(createPage<Policy>()->kill(), NullLog);
+    auto& log = Page::log;
+
+    locklessCheck(createPage<Policy>()->kill(), log);
 
     {
         Page* page = createPage<Policy>();
@@ -204,11 +218,11 @@ void checkPageKill()
         for (size_t i = 0; i < Page::NumBlocks; ++i)
             blocks[i] = page->alloc();
 
-        locklessCheck(!page->kill(), NullLog);
+        locklessCheck(!page->kill(), log);
 
         for (size_t i = 0; i < Page::NumBlocks; ++i)
             locklessCheckEq(
-                    page->free(blocks[i]), i == Page::NumBlocks - 1, NullLog);
+                    page->free(blocks[i]), i == Page::NumBlocks - 1, log);
     }
 
     {
@@ -219,13 +233,13 @@ void checkPageKill()
 
         for (size_t i = 0; i < Page::NumBlocks / 2; ++i)
             locklessCheckEq(
-                    page->free(blocks[i]), i == Page::NumBlocks - 1, NullLog);
+                    page->free(blocks[i]), i == Page::NumBlocks - 1, log);
 
-        locklessCheck(!page->kill(), NullLog);
+        locklessCheck(!page->kill(), log);
 
         for (size_t i = Page::NumBlocks / 2; i < Page::NumBlocks; ++i)
             locklessCheckEq(
-                    page->free(blocks[i]), i == Page::NumBlocks - 1, NullLog);
+                    page->free(blocks[i]), i == Page::NumBlocks - 1, log);
     }
 
     {
@@ -235,9 +249,9 @@ void checkPageKill()
             blocks[i] = page->alloc();
 
         for (size_t i = 0; i < Page::NumBlocks; ++i)
-            locklessCheck(!page->free(blocks[i]), NullLog);
+            locklessCheck(!page->free(blocks[i]), log);
 
-        locklessCheck(page->kill(), NullLog);
+        locklessCheck(page->kill(), log);
     }
 }
 
@@ -245,6 +259,8 @@ void checkPageKill()
 template<typename Policy>
 void checkPageAlloc()
 {
+    cerr << fmtTitle("alloc", '.') << endl;
+
     typedef BlockPage<Policy> Page;
 
     Page* page = createPage<Policy>();
@@ -288,6 +304,8 @@ void checkPageAlloc()
 template<typename Policy>
 void checkPageFull()
 {
+    cerr << fmtTitle("full", '.') << endl;
+
     typedef BlockPage<Policy> Page;
 
     Page* page = createPage<Policy>();
@@ -319,6 +337,8 @@ void checkPageFull()
 template<typename Policy>
 void checkPageRandom()
 {
+    cerr << fmtTitle("random", '.') << endl;
+
     typedef BlockPage<Policy> Page;
 
     static mt19937_64 rng;
@@ -414,7 +434,7 @@ void checkPage()
 
     if (!Policy::BlockSize) return;
 
-    // checkPageKill<Policy>();
+    checkPageKill<Policy>();
     // checkPageAlloc<Policy>();
     // checkPageFull<Policy>();
     // checkPageRandom<Policy>();
