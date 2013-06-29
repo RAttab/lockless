@@ -264,40 +264,49 @@ void checkPageAlloc()
     typedef BlockPage<Policy> Page;
 
     Page* page = createPage<Policy>();
+    auto& log = Page::log;
 
     array<void*, Page::NumBlocks> blocks;
-    for (size_t iteration = 0; iteration < 5; ++iteration) {
-        for (size_t i = 0; i < Page::NumBlocks; ++i) {
-            locklessCheck(page->hasFreeBlock(), NullLog);
 
-            blocks[i] = page->alloc();
-            fillBlock<Policy>(blocks[i], i);
+    for (size_t i = 0; i < Page::NumBlocks; ++i) {
+        locklessCheck(page->hasFreeBlock(), log);
 
-            if (!i) {
-                locklessCheckEq(
-                        page + (Page::MetadataBlocks * Policy::BlockSize),
-                        blocks[0],
-                        NullLog);
-            }
-            else {
-                locklessCheckGt(blocks[i], page, NullLog);
-                locklessCheckLe(
-                        static_cast<uint8_t*>(blocks[i]) + Policy::BlockSize,
-                        reinterpret_cast<uint8_t*>(page + Policy::PageSize),
-                        NullLog);
+        void* block = page->alloc();
+        fillBlock<Policy>(block, i);
 
-                locklessCheckEq(
-                        static_cast<uint8_t*>(blocks[i-1]) + Policy::BlockSize,
-                        blocks[i],
-                        NullLog);
-            }
+        page->free(blocks[i] = block);
 
-            locklessCheckEq(page, Page::pageForBlock(blocks[i]), NullLog);
-            page->free(blocks[i]);
+        if (!i) {
+            locklessCheckEq(
+                    uintptr_t(page) + (Page::MetadataBlocks * Policy::BlockSize),
+                    uintptr_t(blocks[0]),
+                    log);
         }
+        else {
+            locklessCheckGt(blocks[i], page, log);
+            locklessCheckLe(
+                    uintptr_t(blocks[i]) + Policy::BlockSize,
+                    uintptr_t(page) + Policy::PageSize,
+                    log);
+
+            locklessCheckEq(
+                    uintptr_t(blocks[i-1]) + Policy::BlockSize,
+                    uintptr_t(blocks[i]),
+                    log);
+        }
+
+        locklessCheckEq(page, Page::pageForBlock(blocks[i]), log);
     }
 
-    locklessCheck(page->kill(), NullLog);
+    for (size_t iteration = 0; iteration < 2; ++iteration) {
+        for (size_t i = 0; i < Page::NumBlocks; ++i)
+            locklessCheckEq(blocks[i], page->alloc(), log);
+
+        for (size_t i = 0; i < Page::NumBlocks; ++i)
+            page->free(blocks[i]);
+    }
+
+    locklessCheck(page->kill(), log);
 }
 
 
@@ -435,7 +444,7 @@ void checkPage()
     if (!Policy::BlockSize) return;
 
     checkPageKill<Policy>();
-    // checkPageAlloc<Policy>();
+    checkPageAlloc<Policy>();
     // checkPageFull<Policy>();
     // checkPageRandom<Policy>();
 }

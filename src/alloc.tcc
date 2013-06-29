@@ -117,7 +117,7 @@ struct BlockPage
         md.next = nullptr;
         md.refCount = 1ULL << 63;
 
-        log(LogAlloc, "init", "page=%p", this);
+        log(LogAlloc, "init", "p=%p", this);
     }
 
     static BlockPage<Policy>* create()
@@ -137,7 +137,7 @@ struct BlockPage
         size_t subIndex = ctz(md.freeBlocks[index]);
         size_t block = index * 64 + subIndex;
 
-        log(LogAlloc, "find", "page=%p, bf=%s, sub=%ld, block=%ld",
+        log(LogAlloc, "find", "p=%p, bf=%s, sub=%ld, block=%ld",
                 this, printBitfield(index, md.freeBlocks[index]).c_str(),
                 subIndex, block);
 
@@ -163,6 +163,8 @@ struct BlockPage
             if (block != -1ULL) return block;
         }
 
+        log(LogAlloc, "find-rec", "p=%p", this);
+
         for (size_t i = 0; i < BitfieldSize; ++i) {
             if (!md.recycledBlocks[i]) continue;
 
@@ -173,6 +175,7 @@ struct BlockPage
             return block;
         }
 
+        log(LogAlloc, "find-fail", "p=%p", this);
         return -1;
     }
 
@@ -186,7 +189,7 @@ struct BlockPage
     {
         const size_t block = findFreeBlock();
 
-        log(LogAlloc, "alloc-0", "page=%p, block=%ld %s",
+        log(LogAlloc, "alloc-0", "p=%p, block=%ld %s",
                 this, block, print().c_str());
 
         if (block == -1ULL) return nullptr;
@@ -194,7 +197,7 @@ struct BlockPage
         const size_t topIndex = block / 64;
         const size_t subIndex = block % 64;
 
-        log(LogAlloc, "alloc-1", "page=%p, bf=%s, sub=%ld, ptr=%p",
+        log(LogAlloc, "alloc-1", "p=%p, bf=%s, sub=%ld, ptr=%p",
                 this, printBitfield(topIndex, md.freeBlocks[topIndex]).c_str(),
                 subIndex, &blocks[block]);
 
@@ -218,13 +221,13 @@ struct BlockPage
         size_t oldCount = md.refCount;
 
         do {
-            log(LogAlloc, "exit-0", "page=%p, oldCount=%s",
+            log(LogAlloc, "exit-0", "p=%p, oldCount=%s",
                     this, printRefCount(oldCount).c_str());
 
             // Was killed called?
             if (oldCount & (1ULL << 63)) continue;
 
-            log(LogAlloc, "exit-1", "page=%p, %s", this, print().c_str());
+            log(LogAlloc, "exit-1", "p=%p, %s", this, print().c_str());
 
             // Are all the blocks deallocated?
             freePage = true;
@@ -235,7 +238,7 @@ struct BlockPage
 
         } while (md.refCount.compare_exchange_strong(oldCount, oldCount - 1));
 
-        log(LogAlloc, "exit-2", "page=%p, free=%d", this, freePage);
+        log(LogAlloc, "exit-2", "p=%p, free=%d", this, freePage);
 
         /** If freePage is set then all blocks in this page have been freed and
             there will therefor not be any other threads that can increment
@@ -278,7 +281,7 @@ struct BlockPage
             (uintptr_t(ptr) - uintptr_t(this)) / Policy::BlockSize
             - MetadataBlocks;
 
-        log(LogAlloc, "free-0", "page=%p, ptr=%p, block=%ld", this, ptr, block);
+        log(LogAlloc, "free-0", "p=%p, ptr=%p, block=%ld", this, ptr, block);
         locklessCheckLt(block, NumBlocks, log);
 
         size_t topIndex = block / 64;
