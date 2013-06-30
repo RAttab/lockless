@@ -98,7 +98,7 @@ struct MallocDeleter
     fuck-all. Why? Who the fuck knows...
 
     The second is to use the pack pragma which is compatibility layer for MVCC
-    which will, I kid you not, work if we surround the V and C declaration with
+    which will, I kid you not, work if we surround the P and C declaration with
     it. Why does this work and the packed attribute not? Who the fuck knows...
 
     Now you'd think we'd use the pragma and be home free right? Wrong. Good luck
