@@ -149,12 +149,22 @@ std::string format(const char* pattern, const Args&... args)
 }
 
 
-} // lockless
-
 
 /******************************************************************************/
 /* TO STRING                                                                  */
 /******************************************************************************/
+
+template<typename Iterator>
+std::string toString(Iterator it, Iterator last);
+
+template<typename Cont>
+std::string toStringCont(const Cont& c)
+{
+    return toString(begin(c), end(c));
+}
+
+} // lockless
+
 
 namespace std {
 
@@ -180,7 +190,31 @@ std::string to_string(const std::pair<First, Second>& p)
             to_string(p.second).c_str());
 }
 
+
+template<typename T, size_t N> struct array;
+template<typename T, size_t N>
+std::string to_string(const std::array<T, N>& a)
+{
+    return lockless::toString(begin(a), begin(a));
+}
+
 } // namespace std
+
+namespace lockless {
+
+// Needs to reside down here so the to_string(std::pair) overload is visible.
+template<typename Iterator>
+std::string toString(Iterator it, Iterator last)
+{
+    std::string str = "[ ";
+    for (; it != last; ++it)
+        str += std::to_string(*it) + " ";
+    str += "]";
+    return str;
+}
+
+} // namespace lockless
+
 
 
 #endif // __lockless__utils_h__
