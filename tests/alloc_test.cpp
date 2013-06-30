@@ -361,13 +361,13 @@ void checkPageRandom()
     auto hasBlocks = [&] (Page* page) {
         return distance(
                 allocated.lower_bound(page),
-                allocated.upper_bound(page + Policy::PageSize));
+                allocated.upper_bound(page + 1));
     };
 
     auto rndPage = [&] (const set<Page*>& s) {
         uniform_int_distribution<size_t> pageRnd(0, s.size() - 1);
         auto it = s.begin();
-        advance(it, pageRnd(rng));
+        advance(it,pageRnd(rng));
         return it;
     };
 
@@ -418,8 +418,10 @@ void checkPageRandom()
             killPage(*rndPage(active));
 
         else if ((allocated.empty() && !active.empty()) || action < 7) {
+            if (active.empty()) { --iterations; continue; }
+
             auto pageIt = rndPage(active);
-            if (!(*pageIt)->hasFreeBlock()) continue;
+            if (!(*pageIt)->hasFreeBlock()) { --iterations; continue; }
 
             void* block = (*pageIt)->alloc();
             fillBlock<Policy>(block, 1ULL);
@@ -447,7 +449,7 @@ void checkPage()
     checkPageKill<Policy>();
     checkPageAlloc<Policy>();
     checkPageFull<Policy>();
-    // checkPageRandom<Policy>();
+    checkPageRandom<Policy>();
 }
 
 BOOST_AUTO_TEST_CASE(pageTest)
