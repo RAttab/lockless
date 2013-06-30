@@ -8,21 +8,26 @@
 #ifndef __lockless__arch_h__
 #define __lockless__arch_h__
 
-#include "utils.h"
+#include <cstddef>
 
-namespace lockless {
+
+/******************************************************************************/
+/* COMPILERS                                                                  */
+/******************************************************************************/
+
+#define locklessAlign(x) __attribute__((aligned(x)))
+#define locklessPacked __attribute__((__packed__))
+
 
 /******************************************************************************/
 /* CONSTANTS                                                                  */
 /******************************************************************************/
 
+namespace lockless {
+
 // \todo Configure at build time.
-locklessEnum size_t CacheLine = 64;
-locklessEnum size_t PageSize  = 4096;
-
-
-#define locklessAlign(x) __attribute__ ((aligned(x)))
-#define locklessPacked __attribute__ ((__packed__))
+static constexpr size_t CacheLine = 64;
+static constexpr size_t PageSize  = 4096;
 
 } // lockless
 
