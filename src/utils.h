@@ -72,6 +72,46 @@ struct MallocDeleter
 /******************************************************************************/
 /* PADDING                                                                    */
 /******************************************************************************/
+/** My conclusion of the day after having experimented with manually padding in
+    C++:
+
+        C++ and g++ are both steaming piles of shit.
+
+    Here's why:
+
+        struct V { std::atomic<uint64_t> v; };
+
+        struct P { uint8_t p; };
+        struct C : public V, public P  {};
+
+    Before you mention the ridiculous setup, know that sizeof(struct {}) in C++
+    is equal to 1 (principle of least astonishment...? what's that?) so instead
+    we have to rely on some obscure optimization rule in C++ where if a class
+    derives from an empty struct then the compiler is allowed to overlap the
+    layout of the empty struct over the other struct.
+
+    The idea is that we want sizeof(C) == 9 and there seems to be a grand total
+    of 2 ways (gcc specific cause fuck portability) to do this:
+
+    The first is to use __attribute__((packed)) on V but that doesn't work
+    because std::atomic isn't a POD. Oh and no, using it on P and C doesn't do
+    fuck-all. Why? Who the fuck knows...
+
+    The second is to use the pack pragma which is compatibility layer for MVCC
+    which will, I kid you not, work if we surround the V and C declaration with
+    it. Why does this work and the packed attribute not? Who the fuck knows...
+
+    Now you'd think we'd use the pragma and be home free right? Wrong. Good luck
+    trying to make that work with templates... Where are the pragma even
+    supposed to go? Around the declaration of the template? Nop. Around the
+    declaration of the variable which instantiates the template? Nop. Around
+    both maybe? Nop. Well, that's another useless solution...
+
+    Oh and the cherry on the sundea is that the doc for both the attribute and
+    the pragma is completely useless and mentions none of these marvelous
+    pitfalls. Welcome to g++, where adding a single byte to a struct is fucking
+    impossible. Time to learn assembly me-think.
+ */
 
 namespace details {
 
@@ -87,14 +127,6 @@ struct CalcPadding
 
 } // namespace details
 
-
-/** Since C++ doesn't any zero sized types we have to use some weirdo C++
-    optimization whereby deriving from a empty struct will not take up any extra
-    space.
-
-    We use multiple inheritence so that our padding (if any) is after the
-    original struct.
- */
 template<typename T, size_t Align>
 struct Pad :
         public T,
