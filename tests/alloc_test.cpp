@@ -33,11 +33,9 @@ using namespace lockless::details;
 /******************************************************************************/
 
 #define SIZE_SEQ                                                        \
-    (0x01)
-    // (0x02) (0x03) (0x04) (0x05) (0x06) (0x07) (0x08) (0x0C)
+    (0x01) (0x02) (0x03) (0x04) (0x05) (0x06) (0x08) (0x09) (0x0F)
     // (0x10) (0x11) (0x18) (0x20) (0x30) (0x40) (0x80) (0x8F) (0xCF)
-    // (0x0100) (0x0111) (0x0200) (0x0400) (0x0800) (0x1000) (0x1111)
-    // (0x00010000) (0x00100000) (0x01000000) (0x01111111) (0xFFFFFFFF)
+    // (0x0100) (0x0111) (0xFFFF)
 
 void checkPow2(size_t val)
 {
@@ -90,7 +88,7 @@ BOOST_AUTO_TEST_CASE(policyTest)
         locklessCheckGe(pageSize, 4096ULL, NullLog);
 
         if (blockSize)
-            locklessCheckGt(pageSize / blockSize, 64ULL, NullLog);
+            locklessCheckGe(pageSize / blockSize, 64ULL, NullLog);
     };
 
 #define PackedAllocPolicyTest(_r_, _data_, _elem_)      \
@@ -159,8 +157,8 @@ void printPageMd()
 
     typedef CalcPageSize<Policy::BlockSize, 64> Calc;
 
-    size_t sizeofMd = sizeof(typename Page::Metadata);
-    size_t sizeofPadding = sizeof(Page::md) - sizeofMd;
+    size_t sizeofMd = sizeof(Page::md);
+    size_t sizeofPadding = sizeofMd - sizeof(typename Page::Metadata);
 
     cerr << "\ttotal      " << Page::TotalBlocks << endl
         << "\tbfEstimate " << Page::BitfieldEstimate << endl

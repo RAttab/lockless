@@ -13,6 +13,7 @@
 #include "log.h"
 #include "alloc.h"
 #include "bits.h"
+#include "atomic_pod.h"
 
 #include <array>
 #include <atomic>
@@ -83,19 +84,25 @@ struct BlockPage
     locklessEnum size_t BitfieldEstimate = CeilDiv<TotalBlocks, 64>::value;
 
 
-    /** data-structure for our allocator. */
-    struct Metadata
+    /** Metadata used to keep track of the allocator state.
+
+        Note that since we need the struct to be packed in order to properly pad
+        it, we have to use AtomicPod.
+
+        \todo Should split up the arrays on different cache lines.
+     */
+    struct locklessPacked Metadata
     {
-        // \todo Should be on a different cache line then the next 2 fields.
         std::array<uint64_t, BitfieldEstimate> freeBlocks;
+        std::array<AtomicPod<uint64_t>, BitfieldEstimate> recycledBlocks;
 
-        std::array<std::atomic<uint64_t>, BitfieldEstimate> recycledBlocks;
-
-        std::atomic<uint64_t> refCount;
+        AtomicPod<uint64_t> refCount;
         BlockPage* next;
     };
 
     Pad<Metadata, Policy::BlockSize> md;
+    locklessStaticAssert((CheckPad<Metadata, Policy::BlockSize>::value));
+
 
     locklessEnum size_t MetadataBlocks =
         CeilDiv<sizeof(md), Policy::BlockSize>::value;
@@ -108,9 +115,6 @@ struct BlockPage
 
     /** Storage for our blocks. */
     std::array<uint8_t[Policy::BlockSize], NumBlocks> blocks;
-
-
-    locklessStaticAssert(sizeof(md) % Policy::BlockSize == 0ULL);
     locklessStaticAssert(sizeof(md) + sizeof(blocks) <= Policy::PageSize);
 
 
