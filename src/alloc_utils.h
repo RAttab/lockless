@@ -24,7 +24,8 @@ namespace details {
 template<size_t Size>
 struct CalcPageAlign
 {
-    locklessEnum size_t multiplier = CalcPageAlign<Size / 2>::multiplier * 2;
+    locklessEnum size_t multiplier =
+        CalcPageAlign<CeilDiv<Size, 2>::value>::multiplier * 2;
 };
 
 template<> struct CalcPageAlign<1>

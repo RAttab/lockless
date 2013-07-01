@@ -32,10 +32,11 @@ using namespace lockless::details;
 /* UTILS                                                                      */
 /******************************************************************************/
 
-#define SIZE_SEQ                                                        \
-    (0x01) (0x02) (0x03) (0x04) (0x05) (0x06) (0x08) (0x09) (0x0F)
-    // (0x10) (0x11) (0x18) (0x20) (0x30) (0x40) (0x80) (0x8F) (0xCF)
-    // (0x0100) (0x0111) (0xFFFF)
+// Adding anything to this increases the compilation time by a ridiculous amount
+#define SIZE_SEQ                                \
+    (0x01) (0x02) (0x03) (0x04) (0x06) (0x08)   \
+    (0x10) (0x1F) (0x30) (0x8F) (0xFFFF)
+
 
 void checkPow2(size_t val)
 {
