@@ -72,12 +72,8 @@ struct MallocDeleter
 /******************************************************************************/
 /* PADDING                                                                    */
 /******************************************************************************/
-/** My conclusion of the day after having experimented with manually padding in
-    C++:
-
-        C++ and g++ are both steaming piles of shit.
-
-    Here's why:
+/** Turns out that it's ridiculously difficult to manually pad a struct in C++
+    even when we allow for GCC extensions. Here's a fun example to demonstrate:
 
         struct V { std::atomic<uint64_t> v; };
 
@@ -91,27 +87,43 @@ struct MallocDeleter
     layout of the empty struct over the other struct.
 
     The idea is that we want sizeof(C) == 9 and there seems to be a grand total
-    of 2 ways (gcc specific cause fuck portability) to do this:
+    of 2 gcc specific ways of doing this:
 
     The first is to use __attribute__((packed)) on V but that doesn't work
     because std::atomic isn't a POD. Oh and no, using it on P and C doesn't do
-    fuck-all. Why? Who the fuck knows...
+    do anything. Why? Who the fuck knows...
 
     The second is to use the pack pragma which is compatibility layer for MVCC
     which will, I kid you not, work if we surround the P and C declaration with
-    it. Why does this work and the packed attribute not? Who the fuck knows...
+    it. Why does this work but not the packed attribute? Who the fuck knows...
 
-    Now you'd think we'd use the pragma and be home free right? Wrong. Good luck
-    trying to make that work with templates... Where are the pragma even
-    supposed to go? Around the declaration of the template? Nop. Around the
-    declaration of the variable which instantiates the template? Nop. Around
-    both maybe? Nop. Well, that's another useless solution...
+    Now you'd think we'd use the pragma and be home free right? Wrong. How the
+    hell do pragma even work when we're dealing with templates? Where are the
+    pragma even supposed to go? Around the declaration of the template?
+    Nop. Around the declaration of the variable which instantiates the template?
+    Nop. Around both maybe? Nop. Well, that's another useless solution...
 
-    Oh and the cherry on the sundea is that the doc for both the attribute and
-    the pragma is completely useless and mentions none of these marvelous
-    pitfalls. Welcome to g++, where adding a single byte to a struct is fucking
-    impossible. Time to learn assembly me-think.
- */
+    Looks like we're well and truly fucked then. Well, not quite. Remember how I
+    mentioned that packing V wouldn't work because std::atomic is not a pod?
+    Well, this is the one use case for AtomicPod because it's a light clone of
+    std::atomic that also happens to have a copy and move constructor.
+
+    Here's a summary of the packing rules for GCC:
+
+        struct Short { short a }; // sizeof 2
+        Pad<Short, 3> PadShort;   // sizeof 4
+
+        struct Int { int a }; // sizeof 4
+        Pad<Int, 3> PadInt;   // sizeof 8
+
+        struct Big { uint8_t[17] a; }; // sizeof 24
+        Pad<Big, 5> PadBig;            // sizeof 32
+
+    So gcc always rounds the padding to the size of the struct for values less
+    then 8. Anything above will be rounded to 8 as well. Note that this was
+    tested experimentally so I may be getting this horribly wrong.
+
+*/
 
 namespace details {
 
@@ -127,11 +139,30 @@ struct CalcPadding
 
 } // namespace details
 
+
+/** To summarize the giant wall of text above, T must be packed and therefor
+    POD-ed for this class to have any chance of doing anything when working for
+    some edge cases. Since the rules are annoying tricky to get right, there's a
+    CheckPad struct which allows you to determine whether a struct needs to be
+    packed or not.
+ */
 template<typename T, size_t Align>
 struct Pad :
         public T,
         private details::Padding<details::CalcPadding<T, Align>::value>
 {};
+
+
+/** Since the packing rules are so damn had to figure out, this class allows you
+    to quickly figure out whether we need to pack T or not. Creating a static
+    assert after every instanciation of Pad is highly recommended.
+ */
+template<typename T, size_t Align>
+struct CheckPad
+{
+    // If this is false then T needs to be packed.
+    locklessEnum bool value = (sizeof(Pad<T,Align>) % Align) == 0ULL;
+};
 
 
 /******************************************************************************/
