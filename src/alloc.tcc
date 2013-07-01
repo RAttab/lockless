@@ -77,8 +77,7 @@ struct BlockPage
 {
     locklessStaticAssert(IsPow2<Policy::PageSize>::value);
 
-    locklessEnum size_t TotalBlocks =
-        CeilDiv<Policy::PageSize, Policy::BlockSize>::value;
+    locklessEnum size_t TotalBlocks = Policy::PageSize / Policy::BlockSize;
 
     // Upper bound on the size of our bitfield.
     locklessEnum size_t BitfieldEstimate = CeilDiv<TotalBlocks, 64>::value;
