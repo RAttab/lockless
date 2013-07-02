@@ -19,16 +19,26 @@ using namespace lockless;
 /******************************************************************************/
 
 struct Tag;
-Tls<size_t, Tag> tls;
 
+// Volatile modifier forces a read and a write on each iteration
+Tls<volatile size_t, Tag> tls;
+
+/** The main performance difference between this and raw gcc tls is the extra
+    indirection hit we get from having all TLS values be heap-allocated. Note
+    that this comes down to a couple of nano seconds which means that it's still
+    very competitive.
+
+    So the conclussion is that our Tls class should only be used when our value
+    isn't a POD or if we need the constructor and destructor callback.
+*/
 void doTlsThread(unsigned, unsigned itCount)
 {
-    tls = 0;
-    volatile size_t value; // Forces a read and a write on each iteration
+    *tls = 0;
+    size_t value;
 
     for (size_t i = 0; i < itCount; ++i) {
-        value = tls;
-        tls = value + 1;
+        value = *tls;
+        *tls = value + 1;
     }
 }
 
@@ -36,14 +46,14 @@ void doTlsThread(unsigned, unsigned itCount)
 /******************************************************************************/
 /* GCC OPS                                                                    */
 /******************************************************************************/
-// \todo Need an attribute to disable optimizations on this one.
 
-locklessTls size_t gccTls;
+// Volatile forces a read and a write on each iteration.
+locklessTls volatile size_t gccTls;
 
 void doGccThread(unsigned, unsigned itCount)
 {
     gccTls = 0;
-    volatile size_t value; // Forces a read and a write on each iteration
+    size_t value;
 
     for (size_t i = 0; i < itCount; ++i) {
         value = gccTls;
@@ -70,6 +80,13 @@ struct PthreadContext
     }
 };
 
+/** Difficult to make a one-to-one mapping of pthread tls to gcc tls because any
+    real use case would not write back to value using setSpecific every single
+    time. But if won't don't do this then the entire loop can be optimized out
+    which is no better.
+
+    Oh well, mostly disregard the results of this test.
+*/
 void doPthreadThread(PthreadContext&, unsigned itCount)
 {
     pthread_setspecific(pthreadKey, new size_t());

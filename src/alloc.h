@@ -45,6 +45,8 @@ T* alignedMalloc(size_t align, Args&&... args)
 template<size_t Size>
 struct PackedAllocPolicy
 {
+    locklessStaticAssert(Size > 0);
+
     locklessEnum size_t BlockSize = Size;
     locklessEnum size_t PageSize  = details::CalcPageSize<BlockSize, 64>::value;
 };
@@ -53,6 +55,8 @@ struct PackedAllocPolicy
 template<size_t Size, size_t Align = 8>
 struct AlignedAllocPolicy
 {
+    locklessStaticAssert(Size > 0);
+
     locklessEnum size_t BlockSize = CeilDiv<Size, Align>::value * Align;
     locklessEnum size_t PageSize  = details::CalcPageSize<BlockSize, 64>::value;
 };
@@ -70,16 +74,12 @@ struct BlockAlloc
 {
     static void* allocBlock()
     {
-        if (!Policy::BlockSize) return nullptr;
-
-        return allocator.get().allocBlock();
+        return allocator->allocBlock();
     }
 
     static void freeBlock(void* block)
     {
-        if (!Policy::BlockSize) return;
-
-        allocator.get().freeBlock(block);
+        allocator->freeBlock(block);
     }
 
 private:

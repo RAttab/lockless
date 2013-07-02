@@ -73,21 +73,12 @@ struct Tls
         return *value;
     }
 
-    operator T& () { return get(); }
-    operator const T& () const { return get(); }
+    T& operator*() { return get(); }
+    const T& operator*() const { return get(); }
 
-    template<typename TT>
-    void set(TT&& other)
-    {
-        get() = std::forward<TT>(other);
-    }
+    T* operator->() { return &get(); }
+    const T* operator->() const { return &get(); }
 
-    template<typename TT>
-    Tls<T, Tag>& operator= (TT&& other)
-    {
-        set(std::forward<TT>(other));
-        return *this;
-    }
 
     void reset()
     {

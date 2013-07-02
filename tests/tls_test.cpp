@@ -46,24 +46,24 @@ BOOST_AUTO_TEST_CASE(test_single_tls)
     struct Test0;
     Tls<size_t, Test0> tls;
 
-    tls = -1ULL;
-    locklessCheckEq(tls, -1ULL, NullLog);
+    *tls = -1ULL;
+    locklessCheckEq(*tls, -1ULL, NullLog);
 
 
     Barrier barrier(Threads);
 
     auto doTls = [&](unsigned id) {
-        tls = id;
-        locklessCheckEq(tls, id, NullLog);
+        *tls = id;
+        locklessCheckEq(*tls, id, NullLog);
         barrier.wait();
-        locklessCheckEq(tls, id, NullLog);
+        locklessCheckEq(*tls, id, NullLog);
     };
 
     ParallelTest test;
     test.add(doTls, Threads);
     test.run();
 
-    locklessCheckEq(tls, -1ULL, NullLog);
+    locklessCheckEq(*tls, -1ULL, NullLog);
 }
 
 
@@ -88,7 +88,7 @@ BOOST_AUTO_TEST_CASE(test_single_tls_cons)
     Tls<size_t, Test1> tls(construct, destruct);
     locklessCheckEq(count.constructs.load(), 0ULL, NullLog);
 
-    tls = -1ULL;
+    *tls = -1ULL;
     locklessCheckEq(count.constructs.load(), 1ULL, NullLog);
 
 
@@ -96,13 +96,13 @@ BOOST_AUTO_TEST_CASE(test_single_tls_cons)
     Barrier barrierDoneCheck(Threads + 1);
 
     auto doTls = [&](unsigned) {
-        size_t value = tls;
+        size_t value = *tls;
         locklessCheckEq(value, magic, NullLog);
 
         barrierStartCheck.wait();
         barrierDoneCheck.wait();
 
-        tls = value;
+        *tls = value;
     };
 
     auto doCheck = [&](unsigned) {
