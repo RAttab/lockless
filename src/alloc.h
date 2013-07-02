@@ -89,26 +89,21 @@ private:
 
 
 /******************************************************************************/
-/* BLOCK ALLOC T                                                              */
+/* OPERATOR MACROS                                                            */
 /******************************************************************************/
 
-template<typename T, typename Policy = AlignedAllocPolicy<sizeof(T)> >
-struct BlockAllocT
-{
-
-    void* operator new(size_t size)
-    {
-        return Allocator::allocBlock();
+#define LOCKLESS_BLOCK_ALLOC_OPS(Policy,Tag)            \
+    void* operator new(size_t)                          \
+    {                                                   \
+        return BlockAlloc<Policy, Tag>::allocBlock();   \
+    }                                                   \
+    void operator delete(void* block)                   \
+    {                                                   \
+        BlockAlloc<Policy, Tag>::freeBlock(block);      \
     }
 
-    void operator delete(void* block)
-    {
-        Allocator::freeBlock(block);
-    }
-
-private:
-    typedef BlockAlloc<Policy, T> Allocator;
-};
+#define LOCKLESS_BLOCK_ALLOC_TYPED_OPS(T)                       \
+    LOCKLESS_BLOCK_ALLOC_OPS(AlignedAllocPolicy<sizeof(T)>,T)
 
 
 } // lockless

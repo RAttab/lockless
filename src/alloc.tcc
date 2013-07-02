@@ -138,7 +138,7 @@ struct BlockPage
 
 
     BlockPage<Policy>* next() const { return md.next; }
-    void next(BlockPage<Policy>* page) { return md.next = page; }
+    void next(BlockPage<Policy>* page) { md.next = page; }
 
 
     size_t findFreeBlockInBitfield(size_t index)
@@ -402,12 +402,12 @@ struct BlockAllocTls
     {
         Page* page;
 
-        while (page = allocQueue.peek()) {
+        while ((page = allocQueue.peek())) {
             allocQueue.pop();
             page->kill();
         }
 
-        while (page = recycledQueue.peek()) {
+        while ((page = recycledQueue.peek())) {
             recycledQueue.pop();
             page->kill();
         }
@@ -415,9 +415,6 @@ struct BlockAllocTls
 
     void* allocBlock()
     {
-        bool hasMore;
-        void* ptr;
-
         /** Check to see if we can move a recycled page back into the alloc
             queue.
 

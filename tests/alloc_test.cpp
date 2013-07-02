@@ -27,6 +27,8 @@ using namespace std;
 using namespace lockless;
 using namespace lockless::details;
 
+// #define DISABLE_PAGE_TEST
+
 
 /******************************************************************************/
 /* UTILS                                                                      */
@@ -120,6 +122,8 @@ BOOST_AUTO_TEST_CASE(policyTest)
 /******************************************************************************/
 /* PAGE TEST                                                                  */
 /******************************************************************************/
+
+#ifndef DISABLE_PAGE_TEST
 
 template<typename Policy>
 BlockPage<Policy>* createPage()
@@ -473,3 +477,54 @@ BOOST_AUTO_TEST_CASE(pageTest)
 #undef AlignedPageTest
 
 }
+
+#endif
+
+/******************************************************************************/
+/* ALLOC TEST                                                                 */
+/******************************************************************************/
+
+locklessEnum uint64_t Magic = 0x0F1E2D3C4B5A6978ULL;
+
+struct SmallValue
+{
+    SmallValue() : v(Magic) { allocated++; }
+    ~SmallValue()
+    {
+        locklessCheckEq(v, Magic, NullLog);
+        deallocated++;
+    }
+
+    LOCKLESS_BLOCK_ALLOC_TYPED_OPS(SmallValue)
+
+    uint64_t v;
+    static size_t allocated;
+    static size_t deallocated;
+};
+
+size_t SmallValue::allocated = 0;
+size_t SmallValue::deallocated = 0;
+
+
+BOOST_AUTO_TEST_CASE(allocInterfaceTest)
+{
+    for (size_t i = 0; i < 5; ++i) {
+        unique_ptr<SmallValue> ptr(new SmallValue);
+
+        locklessCheckEq(SmallValue::allocated, i+1, NullLog);
+        locklessCheckEq(SmallValue::deallocated, i, NullLog);
+    }
+}
+
+
+// struct BigValue : public BlockAllocT<BigValue>
+// {
+//     BigValue() { fill(v.begin(), v.end(), Magic); }
+//     ~BigValue()
+//     {
+//         auto pred = [] (uint64_t x) { return x == Magic; };
+//         locklessCheck(all_of(v.begin(), v.end(), pred), NullLog);
+//     }
+
+//     array<uint64_t, 11> v;
+// };
