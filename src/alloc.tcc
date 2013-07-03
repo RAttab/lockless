@@ -245,7 +245,7 @@ struct BlockPage
                 if (md.recycledBlocks[i] != -1ULL) freePage = false;
             }
 
-        } while (md.refCount.compare_exchange_strong(oldCount, oldCount - 1));
+        } while (!md.refCount.compare_exchange_strong(oldCount, oldCount - 1));
 
         log(LogAlloc, "p-exit-2", "p=%p, free=%d", this, freePage);
 
