@@ -82,6 +82,8 @@ struct BlockAlloc
         allocator->freeBlock(block);
     }
 
+    static LogAggregator log();
+
 private:
 
     static Tls<details::BlockAllocTls<Policy>, Tag> allocator;
@@ -92,19 +94,29 @@ private:
 /* OPERATOR MACROS                                                            */
 /******************************************************************************/
 
-#define LOCKLESS_BLOCK_ALLOC_OPS(Policy,Tag)            \
+template<typename T>
+struct DefaultBlockAlloc
+{
+    typedef BlockAlloc<AlignedAllocPolicy<sizeof(T)>, T> type;
+};
+
+
+#define LOCKLESS_BLOCK_ALLOC_OPS_IMPL(Alloc)            \
     void* operator new(size_t)                          \
     {                                                   \
-        return BlockAlloc<Policy, Tag>::allocBlock();   \
+        return Alloc::allocBlock();                     \
     }                                                   \
     void operator delete(void* block)                   \
     {                                                   \
-        BlockAlloc<Policy, Tag>::freeBlock(block);      \
+        Alloc::freeBlock(block);                        \
     }
 
-#define LOCKLESS_BLOCK_ALLOC_TYPED_OPS(T)                       \
-    LOCKLESS_BLOCK_ALLOC_OPS(AlignedAllocPolicy<sizeof(T)>,T)
 
+#define LOCKLESS_BLOCK_ALLOC_OPS(Policy,Tag)                    \
+    LOCKLESS_BLOCK_ALLOC_OPS_IMPL(BlockAlloc<Policy,Tag>)
+
+#define LOCKLESS_BLOCK_ALLOC_TYPED_OPS(T)                       \
+    LOCKLESS_BLOCK_ALLOC_OPS_IMPL(DefaultBlockAlloc<T>::type)
 
 } // lockless
 

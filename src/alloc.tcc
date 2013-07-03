@@ -27,7 +27,7 @@ namespace details {
 // The log statements are too complicated to be disabled in the usual manner so
 // instead we mass disable them using this macro.
 #if 1
-#  define log(...)
+#   define log(...)
 #endif
 
 
@@ -126,7 +126,7 @@ struct BlockPage
         md.next = nullptr;
         md.refCount = 1ULL << 63;
 
-        log(LogAlloc, "init", "p=%p", this);
+        log(LogAlloc, "p-init", "p=%p", this);
     }
 
     static BlockPage<Policy>* create()
@@ -146,7 +146,7 @@ struct BlockPage
         size_t subIndex = ctz(md.freeBlocks[index]);
         size_t block = index * 64 + subIndex;
 
-        log(LogAlloc, "find", "p=%p, bf=%s, sub=%ld, block=%ld",
+        log(LogAlloc, "p-find", "p=%p, bf=%s, sub=%ld, block=%ld",
                 this, printBitfield(index, md.freeBlocks[index]).c_str(),
                 subIndex, block);
 
@@ -172,7 +172,7 @@ struct BlockPage
             if (block != -1ULL) return block;
         }
 
-        log(LogAlloc, "find-rec", "p=%p", this);
+        log(LogAlloc, "p-find-rec", "p=%p", this);
 
         for (size_t i = 0; i < BitfieldSize; ++i) {
             if (!md.recycledBlocks[i]) continue;
@@ -184,7 +184,7 @@ struct BlockPage
             return block;
         }
 
-        log(LogAlloc, "find-fail", "p=%p", this);
+        log(LogAlloc, "p-find-fail", "p=%p", this);
         return -1;
     }
 
@@ -198,7 +198,7 @@ struct BlockPage
     {
         const size_t block = findFreeBlock();
 
-        log(LogAlloc, "alloc-0", "p=%p, block=%ld %s",
+        log(LogAlloc, "p-alloc-0", "p=%p, block=%ld %s",
                 this, block, print().c_str());
 
         if (block == -1ULL) return nullptr;
@@ -206,7 +206,7 @@ struct BlockPage
         const size_t topIndex = block / 64;
         const size_t subIndex = block % 64;
 
-        log(LogAlloc, "alloc-1", "p=%p, bf=%s, sub=%ld, ptr=%p",
+        log(LogAlloc, "p-alloc-1", "p=%p, bf=%s, sub=%ld, ptr=%p",
                 this, printBitfield(topIndex, md.freeBlocks[topIndex]).c_str(),
                 subIndex, &blocks[block]);
 
@@ -230,13 +230,13 @@ struct BlockPage
         size_t oldCount = md.refCount;
 
         do {
-            log(LogAlloc, "exit-0", "p=%p, oldCount=%s",
+            log(LogAlloc, "p-exit-0", "p=%p, oldCount=%s",
                     this, printRefCount(oldCount).c_str());
 
             // Was killed called?
             if (oldCount & (1ULL << 63)) continue;
 
-            log(LogAlloc, "exit-1", "p=%p, %s", this, print().c_str());
+            log(LogAlloc, "p-exit-1", "p=%p, %s", this, print().c_str());
 
             // Are all the blocks deallocated?
             freePage = true;
@@ -247,7 +247,7 @@ struct BlockPage
 
         } while (md.refCount.compare_exchange_strong(oldCount, oldCount - 1));
 
-        log(LogAlloc, "exit-2", "p=%p, free=%d", this, freePage);
+        log(LogAlloc, "p-exit-2", "p=%p, free=%d", this, freePage);
 
         /** If freePage is set then all blocks in this page have been freed and
             there will therefor not be any other threads that can increment
@@ -290,7 +290,7 @@ struct BlockPage
             (uintptr_t(ptr) - uintptr_t(this)) / Policy::BlockSize
             - MetadataBlocks;
 
-        log(LogAlloc, "free-0", "p=%p, ptr=%p, block=%ld", this, ptr, block);
+        log(LogAlloc, "p-free-0", "p=%p, ptr=%p, block=%ld", this, ptr, block);
         locklessCheckLt(block, NumBlocks, log);
 
         size_t topIndex = block / 64;
@@ -396,10 +396,16 @@ struct BlockAllocTls
     BlockQueue<Policy> recycledQueue;
     Page* nextRecycledPage;
 
-    BlockAllocTls() : nextRecycledPage(nullptr) {}
+    BlockAllocTls() : nextRecycledPage(nullptr)
+    {
+        log(LogAlloc, "t-init", "");
+    }
 
     ~BlockAllocTls()
     {
+        log(LogAlloc, "t-destruct", "qa=%p, qr=%p",
+                allocQueue.peek(), recycledQueue.peek());
+
         Page* page;
 
         while ((page = allocQueue.peek())) {
@@ -435,10 +441,14 @@ struct BlockAllocTls
         Page* prev = nextRecycledPage;
         Page* page = prev ? prev->next() : recycledQueue.peek();
 
+        log(LogAlloc, "t-alloc-0", "prev=%p, page=%p", prev, page);
+
         if (page) {
             if (page->hasFreeBlock()) {
                 recycledQueue.remove(page, prev);
                 allocQueue.pushBack(page);
+
+                log(LogAlloc, "t-alloc-1", "page=%p -> recycled", page);
             }
             nextRecycledPage = page;
         }
@@ -448,25 +458,34 @@ struct BlockAllocTls
         page = allocQueue.peek();
         if (page) {
             void* ptr = page->alloc();
+            log(LogAlloc, "t-alloc-2", "page=%p, ptr=%p", page, ptr);
 
             if (!page->hasFreeBlock()) {
                 allocQueue.pop();
                 recycledQueue.pushBack(page);
+
+                log(LogAlloc, "t-alloc-3", "page=%p -> full", page);
             }
 
             // Invariant states that allocQueue should either be empty or a
             // block is available in the head.
-            locklessCheck(ptr, NullLog);
+            locklessCheck(ptr, log);
             return ptr;
         }
 
 
         // Couldn't find a block so create create a new page.
         page = details::BlockPage<Policy>::create();
+        log(LogAlloc, "t-alloc-4", "page=%p -> new", page);
         if (!page) return nullptr;
 
         allocQueue.pushFront(page);
-        return page->alloc();
+
+        void* ptr = page->alloc();
+        locklessCheck(ptr, log);
+        log(LogAlloc, "t-alloc-5", "page=%p, ptr=%p", page, ptr);
+
+        return ptr;
     }
 
 
@@ -475,18 +494,42 @@ struct BlockAllocTls
         possible, free can't manipulate the allocation queues which means that
         allocBlock() can is almost entirely single-threaded.
     */
-    void freeBlock(void* block)
+    void freeBlock(void* ptr)
     {
-        details::BlockPage<Policy>::pageForBlock(block)->free(block);
+        Page* page = details::BlockPage<Policy>::pageForBlock(ptr);
+        log(LogAlloc, "t-free", "page=%p, ptr=%p", page, ptr);
+
+        page->free(ptr);
     }
+
+    static DebuggingLog<10240, DebugAlloc>::type log;
 };
+
+template<typename Policy>
+DebuggingLog<10240, DebugAlloc>::type BlockAllocTls<Policy>::log;
 
 } // namespace details
 
 
+// \todo This really really really suck and I'll deal with it later.
+#ifdef log
+#   undef log
+#endif
+
 /******************************************************************************/
 /* BLOCK ALLOC                                                                */
 /******************************************************************************/
+
+template<typename Policy, typename Tag>
+LogAggregator
+BlockAlloc<Policy, Tag>::
+log()
+{
+    return LogAggregator(
+            details::BlockAllocTls<Policy>::log,
+            details::BlockPage<Policy>::log);
+}
+
 
 template<typename Policy, typename Tag>
 Tls<details::BlockAllocTls<Policy>, Tag>

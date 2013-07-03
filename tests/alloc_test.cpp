@@ -502,29 +502,54 @@ struct SmallValue
     static size_t deallocated;
 };
 
+typedef DefaultBlockAlloc<SmallValue>::type SmallValueAlloc;
 size_t SmallValue::allocated = 0;
 size_t SmallValue::deallocated = 0;
 
 
+struct BigValue
+{
+    BigValue()
+    {
+        allocated++;
+        fill(v.begin(), v.end(), Magic);
+    }
+    ~BigValue()
+    {
+        deallocated++;
+        auto pred = [] (uint64_t x) { return x == Magic; };
+        locklessCheck(all_of(v.begin(), v.end(), pred), NullLog);
+    }
+
+    LOCKLESS_BLOCK_ALLOC_TYPED_OPS(BigValue)
+
+    array<uint64_t, 11> v;
+
+    static size_t allocated;
+    static size_t deallocated;
+};
+
+typedef DefaultBlockAlloc<BigValue>::type BigValueAlloc;
+size_t BigValue::allocated = 0;
+size_t BigValue::deallocated = 0;
+
+
 BOOST_AUTO_TEST_CASE(allocInterfaceTest)
 {
-    for (size_t i = 0; i < 5; ++i) {
-        unique_ptr<SmallValue> ptr(new SmallValue);
+    cerr << fmtTitle("Alloc Interface Test", '=') << endl;
 
+    auto log = SmallValueAlloc::log();
+    log.dump();
+
+    for (size_t i = 0; i < 5; ++i) {
+        unique_ptr<SmallValue> ptrSmall(new SmallValue);
         locklessCheckEq(SmallValue::allocated, i+1, NullLog);
         locklessCheckEq(SmallValue::deallocated, i, NullLog);
+
+        unique_ptr<BigValue> ptrBig(new BigValue);
+        locklessCheckEq(BigValue::allocated, i+1, NullLog);
+        locklessCheckEq(BigValue::deallocated, i, NullLog);
     }
+
+    logToStream(log);
 }
-
-
-// struct BigValue : public BlockAllocT<BigValue>
-// {
-//     BigValue() { fill(v.begin(), v.end(), Magic); }
-//     ~BigValue()
-//     {
-//         auto pred = [] (uint64_t x) { return x == Magic; };
-//         locklessCheck(all_of(v.begin(), v.end(), pred), NullLog);
-//     }
-
-//     array<uint64_t, 11> v;
-// };
