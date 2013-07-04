@@ -62,6 +62,16 @@ std::string printRefCount(size_t val)
     return format("{k,%ld}", val);
 }
 
+template<typename Policy>
+struct BlockAllocLog
+{
+    typedef DebuggingLog<10240, DebugAlloc>::type type;
+    static type log;
+};
+
+template<typename Policy>
+typename BlockAllocLog<Policy>::type BlockAllocLog<Policy>::log;
+
 
 /******************************************************************************/
 /* BLOCK PAGE                                                                 */
@@ -320,11 +330,13 @@ struct BlockPage
                 md.next, freeStr.c_str(), recycledStr.c_str());
     }
 
-    static DebuggingLog<10240, DebugAlloc>::type log;
+    static typename BlockAllocLog<Policy>::type& log;
 };
 
 template<typename Policy>
-DebuggingLog<10240, DebugAlloc>::type BlockPage<Policy>::log;
+typename BlockAllocLog<Policy>::type&
+BlockPage<Policy>::
+log = BlockAllocLog<Policy>::log;
 
 
 /******************************************************************************/
@@ -502,11 +514,13 @@ struct BlockAllocTls
         page->free(ptr);
     }
 
-    static DebuggingLog<10240, DebugAlloc>::type log;
+    static typename BlockAllocLog<Policy>::type& log;
 };
 
 template<typename Policy>
-DebuggingLog<10240, DebugAlloc>::type BlockAllocTls<Policy>::log;
+typename BlockAllocLog<Policy>::type&
+BlockAllocTls<Policy>::
+log = BlockAllocLog<Policy>::log;
 
 } // namespace details
 
@@ -525,9 +539,7 @@ LogAggregator
 BlockAlloc<Policy, Tag>::
 log()
 {
-    return LogAggregator(
-            details::BlockAllocTls<Policy>::log,
-            details::BlockPage<Policy>::log);
+    return LogAggregator(details::BlockAllocLog<Policy>::log);
 }
 
 
