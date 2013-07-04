@@ -594,3 +594,71 @@ BOOST_AUTO_TEST_CASE(allocTest)
     typedAllocTest<BigValue>();
     typedAllocTest<HugeValue>();
 }
+
+
+template<typename Value>
+void typedRandomAllocTest()
+{
+    cerr << fmtTitle(to_string(Value().v.size())) << endl;
+
+    typedef typename DefaultBlockAlloc<Value>::type Alloc;
+
+    auto log = Alloc::log();
+    log.dump();
+
+    static mt19937_64 rng;
+    uniform_int_distribution<size_t> actionRnd(0, 10);
+
+    std::set<Value*> allocated;
+    std::set<Value*> deallocated;
+
+    size_t reuse = 0;
+    size_t allocations = 0;
+    size_t deallocations = 0;
+
+    for (size_t iterations = 0; iterations < 10000; ++iterations) {
+        unsigned action = actionRnd(rng);
+
+        if (allocated.empty() || action < 7) {
+            Value* value = new Value();
+            allocations++;
+
+            auto ret = allocated.insert(value);
+            locklessCheck(ret.second, log);
+            if (!deallocated.count(value)) continue;
+
+            reuse++;
+            deallocated.erase(value);
+        }
+        else {
+            uniform_int_distribution<size_t> valueRnd(0, allocated.size() - 1);
+
+            auto it = allocated.begin();
+            advance(it, valueRnd(rng));
+
+            delete *it;
+            deallocations++;
+
+            deallocated.insert(*it);
+            allocated.erase(it);
+        }
+    }
+
+    for (Value* value : allocated) delete value;
+
+    cerr << "alloc:   " << fmtValue(allocations) << endl
+        << "dealloc: " << fmtValue(deallocations) << endl
+        << "reuse:   " << fmtValue(reuse) << endl
+        << "new:     " << fmtValue(allocations - reuse) << endl;
+
+    locklessCheckGt(reuse, 0ULL, log);
+}
+
+BOOST_AUTO_TEST_CASE(randomAllocTest)
+{
+    cerr << fmtTitle("Random Alloc Test", '=') << endl;
+
+    typedRandomAllocTest<SmallValue>();
+    typedRandomAllocTest<BigValue>();
+    typedRandomAllocTest<HugeValue>();
+}
