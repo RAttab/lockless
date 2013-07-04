@@ -89,12 +89,12 @@ lockless_test(tls_perf)
 lockless_test(list)
 lockless_test(list_para)
 
+lockless_test(grcu)
+lockless_test(grcu_para)
+
 lockless_test(rcu)
 lockless_test(rcu_para)
 lockless_test(rcu_perf)
-
-lockless_test(grcu)
-lockless_test(grcu_para)
 
 lockless_test(queue)
 lockless_test(queue_para)
@@ -104,3 +104,4 @@ lockless_test(map)
 lockless_test(map_para)
 
 lockless_test(alloc)
+lockless_test(alloc_para)

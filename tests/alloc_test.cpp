@@ -15,6 +15,7 @@
 #include "check.h"
 #include "debug.h"
 #include "test_utils.h"
+#include "alloc_test.h"
 
 #include <boost/test/unit_test.hpp>
 #include <boost/preprocessor/seq/for_each.hpp>
@@ -480,71 +481,34 @@ BOOST_AUTO_TEST_CASE(pageTest)
 
 #endif
 
+
 /******************************************************************************/
 /* ALLOC TEST                                                                 */
 /******************************************************************************/
-
-locklessEnum uint64_t Magic = 0x0F1E2D3C4B5A6978ULL;
-
-template<size_t Size>
-struct Value
-{
-    Value()
-    {
-        allocated++;
-        fill(v.begin(), v.end(), Magic);
-    }
-    ~Value()
-    {
-        deallocated++;
-        auto pred = [] (uint64_t x) { return x == Magic; };
-        locklessCheck(all_of(v.begin(), v.end(), pred), NullLog);
-    }
-
-    LOCKLESS_BLOCK_ALLOC_TYPED_OPS(Value<Size>)
-
-    array<uint64_t, Size> v;
-
-    static size_t allocated;
-    static size_t deallocated;
-};
-
-template<size_t Size> size_t Value<Size>::allocated = 0;
-template<size_t Size> size_t Value<Size>::deallocated = 0;
-
-typedef Value<1> SmallValue;
-typedef DefaultBlockAlloc<SmallValue>::type SmallValueAlloc;
-
-typedef Value<11> BigValue;
-typedef DefaultBlockAlloc<BigValue>::type BigValueAlloc;
-
-typedef Value<65> HugeValue;
-typedef DefaultBlockAlloc<HugeValue>::type HugeValueAlloc;
-
 
 BOOST_AUTO_TEST_CASE(allocInterfaceTest)
 {
     cerr << fmtTitle("Alloc Interface Test", '=') << endl;
 
-    auto logSmall = SmallValueAlloc::log();
-    auto logBig = BigValueAlloc::log();
-    auto logHuge = HugeValueAlloc::log();
+    auto logSmall = DefaultBlockAlloc<SmallValue>::type::log();
+    auto logBig = DefaultBlockAlloc<BigValue>::type::log();
+    auto logHuge = DefaultBlockAlloc<HugeValue>::type::log();
 
     LogAggregator log(logSmall, logBig, logHuge);
     log.dump();
 
     for (size_t i = 0; i < 5; ++i) {
         unique_ptr<SmallValue> p0(new SmallValue);
-        locklessCheckEq(SmallValue::allocated, i+1, log);
-        locklessCheckEq(SmallValue::deallocated, i, log);
+        locklessCheckEq(SmallValue::allocated.load(), i+1, log);
+        locklessCheckEq(SmallValue::deallocated.load(), i, log);
 
         unique_ptr<BigValue> p1(new BigValue);
-        locklessCheckEq(BigValue::allocated, i+1, log);
-        locklessCheckEq(BigValue::deallocated, i, log);
+        locklessCheckEq(BigValue::allocated.load(), i+1, log);
+        locklessCheckEq(BigValue::deallocated.load(), i, log);
 
         unique_ptr<HugeValue> p2(new HugeValue);
-        locklessCheckEq(HugeValue::allocated, i+1, log);
-        locklessCheckEq(HugeValue::deallocated, i, log);
+        locklessCheckEq(HugeValue::allocated.load(), i+1, log);
+        locklessCheckEq(HugeValue::deallocated.load(), i, log);
     }
 }
 
