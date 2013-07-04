@@ -69,9 +69,11 @@ struct AlignedAllocPolicy
 namespace details { template<typename Policy> struct BlockAllocTls; }
 
 
-template<typename Policy, typename Tag>
+template<typename Policy_, typename Tag>
 struct BlockAlloc
 {
+    typedef Policy_ Policy;
+
     static void* allocBlock()
     {
         return allocator->allocBlock();

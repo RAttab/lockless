@@ -194,7 +194,7 @@ struct BlockPage
             return block;
         }
 
-        log(LogAlloc, "p-find-fail", "p=%p", this);
+        log(LogAlloc, "p-find-nop", "p=%p", this);
         return -1;
     }
 
@@ -383,11 +383,27 @@ struct BlockQueue
 
     void pushBack(Page* page)
     {
-        if (tail) {
-            tail->next(page);
-            tail = page;
+        if (!tail) {
+            pushFront(page);
+            return;
         }
-        pushFront(page);
+
+        page->next(nullptr);
+        tail->next(page);
+        tail = page;
+    }
+
+    void dump()
+    {
+        std::cerr << "[ ";
+
+        Page* page = head;
+        while (page) {
+            std::cerr << format("%p ", page);
+            page = page->next();
+        }
+
+        std::cerr << "]" << std::endl;
     }
 
     Page* head;
@@ -451,16 +467,16 @@ struct BlockAllocTls
             generational GC.
         */
         Page* prev = nextRecycledPage;
-        Page* page = prev ? prev->next() : recycledQueue.peek();
+        Page* page = prev && prev->next() ? prev->next() : recycledQueue.peek();
 
-        log(LogAlloc, "t-alloc-0", "prev=%p, page=%p", prev, page);
+        log(LogAlloc, "t-alloc-0", "prev=%p, p=%p", prev, page);
 
         if (page) {
             if (page->hasFreeBlock()) {
                 recycledQueue.remove(page, prev);
                 allocQueue.pushBack(page);
 
-                log(LogAlloc, "t-alloc-1", "page=%p -> recycled", page);
+                log(LogAlloc, "t-alloc-1", "p=%p -> recycled", page);
             }
             nextRecycledPage = page;
         }
@@ -470,13 +486,13 @@ struct BlockAllocTls
         page = allocQueue.peek();
         if (page) {
             void* ptr = page->alloc();
-            log(LogAlloc, "t-alloc-2", "page=%p, ptr=%p", page, ptr);
+            log(LogAlloc, "t-alloc-2", "p=%p, ptr=%p", page, ptr);
 
             if (!page->hasFreeBlock()) {
                 allocQueue.pop();
                 recycledQueue.pushBack(page);
 
-                log(LogAlloc, "t-alloc-3", "page=%p -> full", page);
+                log(LogAlloc, "t-alloc-3", "p=%p -> full", page);
             }
 
             // Invariant states that allocQueue should either be empty or a
@@ -488,14 +504,14 @@ struct BlockAllocTls
 
         // Couldn't find a block so create create a new page.
         page = details::BlockPage<Policy>::create();
-        log(LogAlloc, "t-alloc-4", "page=%p -> new", page);
+        log(LogAlloc, "t-alloc-4", "p=%p -> new", page);
         if (!page) return nullptr;
 
         allocQueue.pushFront(page);
 
         void* ptr = page->alloc();
         locklessCheck(ptr, log);
-        log(LogAlloc, "t-alloc-5", "page=%p, ptr=%p", page, ptr);
+        log(LogAlloc, "t-alloc-5", "p=%p, ptr=%p", page, ptr);
 
         return ptr;
     }

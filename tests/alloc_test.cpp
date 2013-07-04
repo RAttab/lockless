@@ -526,22 +526,71 @@ BOOST_AUTO_TEST_CASE(allocInterfaceTest)
 {
     cerr << fmtTitle("Alloc Interface Test", '=') << endl;
 
-    auto log = SmallValueAlloc::log();
+    auto logSmall = SmallValueAlloc::log();
+    auto logBig = BigValueAlloc::log();
+    auto logHuge = HugeValueAlloc::log();
+
+    LogAggregator log(logSmall, logBig, logHuge);
     log.dump();
 
     for (size_t i = 0; i < 5; ++i) {
         unique_ptr<SmallValue> p0(new SmallValue);
-        locklessCheckEq(SmallValue::allocated, i+1, NullLog);
-        locklessCheckEq(SmallValue::deallocated, i, NullLog);
+        locklessCheckEq(SmallValue::allocated, i+1, log);
+        locklessCheckEq(SmallValue::deallocated, i, log);
 
         unique_ptr<BigValue> p1(new BigValue);
-        locklessCheckEq(BigValue::allocated, i+1, NullLog);
-        locklessCheckEq(BigValue::deallocated, i, NullLog);
+        locklessCheckEq(BigValue::allocated, i+1, log);
+        locklessCheckEq(BigValue::deallocated, i, log);
 
         unique_ptr<HugeValue> p2(new HugeValue);
-        locklessCheckEq(HugeValue::allocated, i+1, NullLog);
-        locklessCheckEq(HugeValue::deallocated, i, NullLog);
+        locklessCheckEq(HugeValue::allocated, i+1, log);
+        locklessCheckEq(HugeValue::deallocated, i, log);
     }
+}
 
-    logToStream(log);
+template<typename Value>
+void typedAllocTest()
+{
+    cerr << fmtTitle(to_string(Value().v.size())) << endl;
+
+    typedef typename DefaultBlockAlloc<Value>::type Alloc;
+
+    auto log = Alloc::log();
+    log.dump();
+
+    for (size_t iterations = 0; iterations < 5; ++iterations) {
+        set<Value*> allocated;
+        for (size_t i = 0; i < 256; ++i) {
+            auto ret = allocated.insert(new Value());
+            locklessCheck(ret.second, log);
+        }
+
+        set<Value*> deallocated;
+        for (size_t i = 0; i < 64; ++i) {
+            auto it = allocated.begin();
+            deallocated.insert(*it);
+            delete *it;
+            allocated.erase(it);
+        }
+
+        size_t matches = 0;
+        for (size_t i = 0; i < 256; ++i) {
+            Value* value = new Value();
+            auto ret = allocated.insert(value);
+            locklessCheck(ret.second, log);
+            matches += deallocated.count(value);
+        }
+        locklessCheckGt(matches, 0ULL, log);
+
+        for (Value* value : allocated) delete value;
+    }
+}
+
+BOOST_AUTO_TEST_CASE(allocTest)
+{
+    cerr << fmtTitle("Alloc Test", '=') << endl;
+
+    typedAllocTest<SmallValue>();
+    typedAllocTest<BigValue>();
+    typedAllocTest<HugeValue>();
 }

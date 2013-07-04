@@ -228,10 +228,10 @@ struct Log<0>
     }
 };
 
-template<size_t Size, bool flag>
+template<size_t Size, bool Flag>
 struct DebuggingLog
 {
-    typedef Log<flag ? Size : 0> type;
+    typedef Log<Flag ? Size : 0> type;
 };
 
 namespace { Log<0> NullLog; }
