@@ -185,7 +185,7 @@ void printPageMd()
         << endl
         << "\tmd.free    " << sizeof(Page::Metadata::freeBlocks) << endl
         << "\tmd.rec     " << sizeof(Page::Metadata::recycledBlocks) << endl
-        << "\tmd.ref     " << sizeof(Page::Metadata::refCount) << endl
+        << "\tmd.ref     " << sizeof(Page::Metadata::freedBitfields) << endl
         << "\tmd.next    " << sizeof(Page::Metadata::next) << endl
         << endl;
 }

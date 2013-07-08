@@ -104,9 +104,10 @@ struct BlockPage
     struct locklessPacked Metadata
     {
         std::array<uint64_t, BitfieldEstimate> freeBlocks;
-        std::array<AtomicPod<uint64_t>, BitfieldEstimate> recycledBlocks;
 
-        AtomicPod<uint64_t> refCount;
+        std::array<AtomicPod<uint64_t>, BitfieldEstimate> recycledBlocks;
+        AtomicPod<uint64_t> freedBitfields;
+
         BlockPage* next;
     };
 
@@ -121,6 +122,7 @@ struct BlockPage
 
     // Actual bound on the size of our bitfield.
     locklessEnum size_t BitfieldSize = CeilDiv<NumBlocks, 64>::value;
+    locklessStaticAssert(BitfieldSize < 63);
 
 
     /** Storage for our blocks. */
@@ -133,8 +135,8 @@ struct BlockPage
         // may want to go for a memset here.
         std::fill(md.freeBlocks.begin(), md.freeBlocks.end(), -1ULL);
         std::fill(md.recycledBlocks.begin(), md.recycledBlocks.end(), 0ULL);
+        md.freedBitfields = 0;
         md.next = nullptr;
-        md.refCount = 1ULL << 63;
 
         log(LogAlloc, "p-init", "p=%p", this);
     }
@@ -224,63 +226,50 @@ struct BlockPage
         return reinterpret_cast<void*>(&blocks[block]);
     }
 
-
-    /** These two functions manages the refCount such that we can safely delete
-        the page after the function kill() is called.
-
-        Note that this is the only lock-free algorithm in this allocator.
-        Everything else is wait-free. This really sucks but I don't think it's
-        possible to implement this wait-free. On the bright side, this is only
-        used when deallocating which means that allocation are still wait-free.
-     */
-    void enterFree() { md.refCount++; }
-    bool exitFree()
+    bool markBitfield(uint64_t index)
     {
-        bool emptyPage = false;
-        size_t oldCount = md.refCount;
-
-        do {
-            log(LogAlloc, "p-exit-0", "p=%p, oldCount=%s",
-                    this, printRefCount(oldCount).c_str());
-
-            // No point on doing the expensive isEmpty check if kill() wasn't
-            // called and if we're not the last person out.
-            if (oldCount > 1) continue;
-
-            log(LogAlloc, "p-exit-1", "p=%p, %s", this, print().c_str());
-
-            // Are all the blocks deallocated?
-            emptyPage = true;
-            for (size_t i = 0; emptyPage && i < BitfieldSize; ++i) {
-                md.recycledBlocks[i] |= md.freeBlocks[i];
-                if (md.recycledBlocks[i] != -1ULL) emptyPage = false;
-            }
-
-        } while (!md.refCount.compare_exchange_strong(oldCount, oldCount - 1));
-
-        log(LogAlloc, "p-exit-2", "p=%p, free=%d", this, emptyPage);
-
-        /** If emptyPage is set then all blocks in this page have been freed and
-            there will therefor not be any other threads that can increment
-            refCount. If refCount has reached 0 then we're the last thread
-            within this page and since no other threads can access this page
-            then it's safe to delete the page.
-         */
-        if (oldCount > 1 || !emptyPage) return false;
+        uint64_t value = md.freedBitfields |= 1ULL << index;
+        if (value != -1ULL) return false;
 
         alignedFree(this);
         return true;
     }
-
 
     /** Indicates that the page will no longer be used for allocation and that
         it should be reclaimed whenever it is safe to do so.
      */
     bool kill()
     {
-        enterFree();
-        md.refCount &= ~(1ULL << 63);
-        return exitFree();
+        /** This var is used to synchronize both the kill() and the free() ops
+            in a wait-free manner.
+
+            We discard its value because there's no reason to maintain its value
+            until this function is called. While this adds a little overhead to
+            free(), alloc() doesn't have to maintain it at all.
+
+            Note that it's safe to discard the state because from this point on,
+            no more alloc can take place and the bits can only be flipped in one
+            direction.
+         */
+        md.freedBitfields = 0;
+
+
+        /** Since we just blew away the current state of the freedBitfields,
+            we'll have to rebuild it before we can set the killbit.
+         */
+        for (size_t i = 0; i < 63; ++i) {
+            if (i < BitfieldSize) {
+                uint64_t value = md.recycledBlocks[i] |= md.freeBlocks[i];
+                if (value != -1ULL) continue;
+            }
+
+            uint64_t value = md.freedBitfields |= 1ULL << i;
+            locklessCheckNe(value, -1ULL, log);
+        }
+
+
+        // Set the killbit such that we enable to page to be deallocated. 
+        return markBitfield(63);
     }
 
 
@@ -307,9 +296,10 @@ struct BlockPage
         size_t topIndex = block / 64;
         size_t subIndex = block % 64;
 
-        enterFree();
-        md.recycledBlocks[topIndex] |= 1ULL << subIndex;
-        return exitFree();
+        uint64_t value = md.recycledBlocks[topIndex] |= 1ULL << subIndex;
+        if (value != -1ULL) return false;
+
+        return markBitfield(topIndex);
     }
 
     static BlockPage<Policy>* pageForBlock(void* block)
