@@ -236,36 +236,37 @@ struct BlockPage
     void enterFree() { md.refCount++; }
     bool exitFree()
     {
-        bool freePage = false;
+        bool emptyPage = false;
         size_t oldCount = md.refCount;
 
         do {
             log(LogAlloc, "p-exit-0", "p=%p, oldCount=%s",
                     this, printRefCount(oldCount).c_str());
 
-            // Was killed called?
-            if (oldCount & (1ULL << 63)) continue;
+            // No point on doing the expensive isEmpty check if kill() wasn't
+            // called and if we're not the last person out.
+            if (oldCount > 1) continue;
 
             log(LogAlloc, "p-exit-1", "p=%p, %s", this, print().c_str());
 
             // Are all the blocks deallocated?
-            freePage = true;
-            for (size_t i = 0; freePage && i < BitfieldSize; ++i) {
+            emptyPage = true;
+            for (size_t i = 0; emptyPage && i < BitfieldSize; ++i) {
                 md.recycledBlocks[i] |= md.freeBlocks[i];
-                if (md.recycledBlocks[i] != -1ULL) freePage = false;
+                if (md.recycledBlocks[i] != -1ULL) emptyPage = false;
             }
 
         } while (!md.refCount.compare_exchange_strong(oldCount, oldCount - 1));
 
-        log(LogAlloc, "p-exit-2", "p=%p, free=%d", this, freePage);
+        log(LogAlloc, "p-exit-2", "p=%p, free=%d", this, emptyPage);
 
-        /** If freePage is set then all blocks in this page have been freed and
+        /** If emptyPage is set then all blocks in this page have been freed and
             there will therefor not be any other threads that can increment
             refCount. If refCount has reached 0 then we're the last thread
             within this page and since no other threads can access this page
             then it's safe to delete the page.
          */
-        if (!freePage || oldCount > 1) return false;
+        if (oldCount > 1 || !emptyPage) return false;
 
         alignedFree(this);
         return true;
