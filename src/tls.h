@@ -8,6 +8,8 @@
 #ifndef __lockless__tls_h__
 #define __lockless__tls_h__
 
+#include "arch.h"
+
 #include <pthread.h>
 #include <functional>
 #include <cassert>
@@ -88,7 +90,7 @@ struct Tls
 
 private:
 
-    void init() const
+    void init() const locklessNeverInline
     {
         value = new T();
         if (constructFn) constructFn(*value);

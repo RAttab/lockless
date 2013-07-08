@@ -173,7 +173,7 @@ struct BlockPage
         \todo These scans could easily be vectorized. Templating could render
         this a bit tricky.
      */
-    size_t findFreeBlock()
+    size_t findFreeBlock() locklessNeverInline
     {
         for (size_t i = 0; i < BitfieldSize; ++i) {
             if (!md.freeBlocks[i]) continue;

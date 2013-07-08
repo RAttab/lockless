@@ -74,12 +74,12 @@ struct BlockAlloc
 {
     typedef Policy_ Policy;
 
-    static void* allocBlock()
+    static void* allocBlock() locklessMalloc locklessNeverInline
     {
         return allocator->allocBlock();
     }
 
-    static void freeBlock(void* block)
+    static void freeBlock(void* block) locklessNeverInline
     {
         allocator->freeBlock(block);
     }
