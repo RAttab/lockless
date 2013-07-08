@@ -66,12 +66,7 @@ struct AtomicPod
     }
 
 #define LOCKLESS_ATOMIC_POD_BINARY_OP(op,name)                          \
-    AtomicPod<T>& operator op (T v)                                     \
-    {                                                                   \
-        __atomic_ ## name ## _fetch(&value, v, AtomicSeqCst);           \
-        return *this;                                                   \
-    }                                                                   \
-    T  name ## _fetch(T v)                                              \
+    T operator op (T v)                                                 \
     {                                                                   \
         return __atomic_ ## name ## _fetch(&value, v, AtomicSeqCst);    \
     }                                                                   \
@@ -87,16 +82,14 @@ struct AtomicPod
     LOCKLESS_ATOMIC_POD_BINARY_OP(^=,xor)
 
 
-#define LOCKLESS_ATOMIC_POD_UNARY_OP(op,name)                   \
-    AtomicPod<T>& operator op ()                                \
-    {                                                           \
-        __atomic_fetch_ ## name (&value, 1, AtomicSeqCst);      \
-        return *this;                                           \
-    }                                                           \
-    AtomicPod<T>& operator op (int)                             \
-    {                                                           \
-        __atomic_fetch_ ## name (&value, 1, AtomicSeqCst);      \
-        return *this;                                           \
+#define LOCKLESS_ATOMIC_POD_UNARY_OP(op,name)                           \
+    T operator op ()                                                    \
+    {                                                                   \
+        return __atomic_fetch_ ## name (&value, 1, AtomicSeqCst);       \
+    }                                                                   \
+    T operator op (int)                                                 \
+    {                                                                   \
+        return __atomic_fetch_ ## name (&value, 1, AtomicSeqCst);       \
     }
 
     LOCKLESS_ATOMIC_POD_UNARY_OP(++,add)
