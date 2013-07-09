@@ -82,19 +82,16 @@ struct PthreadContext
 
 /** Difficult to make a one-to-one mapping of pthread tls to gcc tls because any
     real use case would not write back to value using setSpecific every single
-    time. But if won't don't do this then the entire loop can be optimized out
-    which is no better.
+    time. But then we don't really take into account the cost of setspecific
+    which is not really fair.
 
     Oh well, mostly disregard the results of this test.
 */
 void doPthreadThread(PthreadContext&, unsigned itCount)
 {
     pthread_setspecific(pthreadKey, new size_t());
-
-    size_t* value;
-
     for (size_t i = 0; i < itCount; ++i) {
-        value = static_cast<size_t*>(pthread_getspecific(pthreadKey));\
+        size_t* value = static_cast<size_t*>(pthread_getspecific(pthreadKey));
         *value += 1;
         pthread_setspecific(pthreadKey, value);
     }
