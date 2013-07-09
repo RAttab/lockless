@@ -55,13 +55,6 @@ std::string printBitfield(const Array& arr, size_t size, uint64_t base)
     return str;
 }
 
-std::string printRefCount(size_t val)
-{
-    size_t mask = 1ULL << 63;
-    if (val & mask) return std::to_string(val & ~mask);
-    return format("{k,%ld}", val);
-}
-
 template<typename Policy>
 struct BlockAllocLog
 {
@@ -327,9 +320,9 @@ struct BlockPage
         std::string recycledStr =
             printBitfield(md.recycledBlocks, BitfieldSize, 0);
 
-        return format("ref=%s, next=%p, free=[ %s], rec=[ %s]",
-                printRefCount(md.refCount).c_str(),
-                md.next, freeStr.c_str(), recycledStr.c_str());
+        return format("freed=%p, next=%p, free=[ %s], rec=[ %s]",
+                md.freedBitfields, md.next,
+                freeStr.c_str(), recycledStr.c_str());
     }
 
     static typename BlockAllocLog<Policy>::type& log;
