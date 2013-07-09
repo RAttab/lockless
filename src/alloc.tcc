@@ -228,7 +228,17 @@ struct BlockPage
 
     bool markBitfield(uint64_t index)
     {
-        uint64_t value = md.freedBitfields |= 1ULL << index;
+        /** So technically we'd use an atomic or operand to mark the bitfield
+            but unfortunately x86's lock or instruction doesn't return the value
+            which means that gcc will generate a cas-loop and break the whole
+            wait-free thing.
+
+            Instead, we use an atomic increment to set the bitfield because x86
+            has the xadd which does return the value and works perfectly well to
+            set the bit. So no cas-loop means that we can guarantee
+            wait-free-ness. Hooray for horrible hacks!
+         */
+        uint64_t value = (md.freedBitfields += 1ULL << index);
         if (value != -1ULL) return false;
 
         alignedFree(this);
@@ -263,12 +273,12 @@ struct BlockPage
                 if (value != -1ULL) continue;
             }
 
-            uint64_t value = md.freedBitfields |= 1ULL << i;
+            uint64_t value = md.freedBitfields += 1ULL << i;
             locklessCheckNe(value, -1ULL, log);
         }
 
 
-        // Set the killbit such that we enable to page to be deallocated. 
+        // Set the killbit such that we enable to page to be deallocated.
         return markBitfield(63);
     }
 
@@ -296,7 +306,8 @@ struct BlockPage
         size_t topIndex = block / 64;
         size_t subIndex = block % 64;
 
-        uint64_t value = md.recycledBlocks[topIndex] |= 1ULL << subIndex;
+        // See markBitfield for rational behind the atomic increment.
+        uint64_t value = (md.recycledBlocks[topIndex] += 1ULL << subIndex);
         if (value != -1ULL) return false;
 
         return markBitfield(topIndex);
