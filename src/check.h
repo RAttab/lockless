@@ -11,6 +11,7 @@
 #include "lock.h"
 #include "debug.h"
 #include "log.h"
+#include "arch.h"
 
 #include <stdio.h>
 #include <array>
@@ -95,7 +96,8 @@ std::string checkStr(
 
 #define locklessCheckCtx(_pred_, _log_, _ctx_) \
     do {                                                                \
-        if (_pred_) break;                                              \
+        bool val = _pred_;                                              \
+        if (locklessLikely(val)) break;                                 \
         lockless::check(lockless::checkStr(#_pred_), _log_, _ctx_);     \
     } while(false)                                                      \
 
@@ -106,7 +108,7 @@ std::string checkStr(
     do {                                                                \
         decltype(_first_) firstVal = (_first_);                         \
         decltype(_second_) secondVal = (_second_);                      \
-        if (firstVal _op_ secondVal) break;                             \
+        if (locklessLikely(firstVal _op_ secondVal)) break;             \
         lockless::check(                                                \
                 lockless::checkStr(#_op_, #_first_, firstVal, #_second_, secondVal), \
                 _log_, _ctx_);                                          \

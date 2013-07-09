@@ -24,6 +24,8 @@
 #define locklessPure         __attribute__((pure))
 #define locklessPrintf(x,y)  __attribute__((format(printf, x, y)))
 #define locklessMalloc       __attribute__((malloc))
+#define locklessLikely(x)    __builtin_expect(x,true)
+#define locklessUnlikely(x)  __builtin_expect(x,false)
 
 
 /******************************************************************************/
