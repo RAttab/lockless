@@ -451,6 +451,8 @@ struct BlockAllocTls
 
     void* allocBlock()
     {
+        if (!Policy::BlockSize) return nullptr;
+
         /** Check to see if we can move a recycled page back into the alloc
             queue.
 
@@ -526,6 +528,8 @@ struct BlockAllocTls
     */
     void freeBlock(void* ptr)
     {
+        if (!ptr) return;
+
         Page* page = details::BlockPage<Policy>::pageForBlock(ptr);
         log(LogAlloc, "t-free", "page=%p, ptr=%p", page, ptr);
 

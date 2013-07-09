@@ -65,10 +65,8 @@ struct RingBuffer
 template<typename Value, size_t Size>
 void doRingBufferThread(RingBuffer<Value, Size>& ctx, unsigned itCount)
 {
-    for (size_t it = 0; it < itCount; ++it) {
-        Value* old = ctx.ring[it % ctx.ring.size()].exchange(new Value());
-        if (old) delete old;
-    }
+    for (size_t it = 0; it < itCount; ++it)
+        delete ctx.ring[it % ctx.ring.size()].exchange(new Value());
 }
 
 
@@ -107,23 +105,23 @@ int main(int argc, char** argv)
     Format fmt = csvOutput ? Csv : Human;
 
     runRingBufferTest<true, 1, 10>(thCount, itCount, fmt);
-    // runRingBufferTest<false, 1, 10>(thCount, itCount, fmt);
-    // runRingBufferTest<true, 1, 1000>(thCount, itCount, fmt);
-    // runRingBufferTest<false, 1, 1000>(thCount, itCount, fmt);
+    runRingBufferTest<false, 1, 10>(thCount, itCount, fmt);
+    runRingBufferTest<true, 1, 1000>(thCount, itCount, fmt);
+    runRingBufferTest<false, 1, 1000>(thCount, itCount, fmt);
 
-    // cerr << endl;
+    cerr << endl;
 
-    // runRingBufferTest<true, 11, 10>(thCount, itCount, fmt);
-    // runRingBufferTest<false, 11, 10>(thCount, itCount, fmt);
-    // runRingBufferTest<true, 11, 1000>(thCount, itCount, fmt);
-    // runRingBufferTest<false, 11, 1000>(thCount, itCount, fmt);
+    runRingBufferTest<true, 11, 10>(thCount, itCount, fmt);
+    runRingBufferTest<false, 11, 10>(thCount, itCount, fmt);
+    runRingBufferTest<true, 11, 1000>(thCount, itCount, fmt);
+    runRingBufferTest<false, 11, 1000>(thCount, itCount, fmt);
 
-    // cerr << endl;
+    cerr << endl;
 
-    // runRingBufferTest<true, 65, 10>(thCount, itCount, fmt);
-    // runRingBufferTest<false, 65, 10>(thCount, itCount, fmt);
-    // runRingBufferTest<true, 65, 1000>(thCount, itCount, fmt);
-    // runRingBufferTest<false, 65, 1000>(thCount, itCount, fmt);
+    runRingBufferTest<true, 65, 10>(thCount, itCount, fmt);
+    runRingBufferTest<false, 65, 10>(thCount, itCount, fmt);
+    runRingBufferTest<true, 65, 1000>(thCount, itCount, fmt);
+    runRingBufferTest<false, 65, 1000>(thCount, itCount, fmt);
 
     return 0;
 
