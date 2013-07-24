@@ -329,18 +329,24 @@ void checkPageFull()
 
     for (size_t k = 1; k < Page::NumBlocks; ++k) {
         for (size_t i = 0; i < Page::NumBlocks; ++i)
-            locklessCheckEq(page->alloc(), blocks[i], NullLog);
+            page->alloc();
 
         locklessCheck(!page->hasFreeBlock(), NullLog);
 
         for (size_t i = 0; i < Page::NumBlocks; i += k)
             page->free(blocks[i]);
 
+        locklessCheck(page->hasFreeBlock(), NullLog);
+
         for (size_t i = 0; i < Page::NumBlocks; i += k)
-            locklessCheckEq(page->alloc(), blocks[i], NullLog);
+            page->alloc();
+
+        locklessCheck(!page->hasFreeBlock(), NullLog);
 
         for (size_t i = 0; i < Page::NumBlocks; ++i)
             page->free(blocks[i]);
+
+        locklessCheck(page->hasFreeBlock(), NullLog);
     }
 
     locklessCheck(page->kill(), NullLog);

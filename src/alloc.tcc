@@ -97,8 +97,11 @@ struct BlockPage
     struct locklessPacked Metadata
     {
         std::array<uint64_t, BitfieldEstimate> freeBlocks;
+        size_t allocStart;
 
         std::array<AtomicPod<uint64_t>, BitfieldEstimate> recycledBlocks;
+        size_t recycleStart;
+
         AtomicPod<uint64_t> freedBitfields;
 
         BlockPage* next;
@@ -128,7 +131,7 @@ struct BlockPage
         // may want to go for a memset here.
         std::fill(md.freeBlocks.begin(), md.freeBlocks.end(), -1ULL);
         std::fill(md.recycledBlocks.begin(), md.recycledBlocks.end(), 0ULL);
-        md.freedBitfields = 0;
+        md.freedBitfields = md.allocStart = 0;
         md.next = nullptr;
 
         log(LogAlloc, "p-init", "p=%p", this);
@@ -164,13 +167,12 @@ struct BlockPage
         Note that the 2-pass scan has the nice advantage that we're more likely
         to maintain spatial locality. It also allows us to do a quick
         synchronization-free scan to look for free blocks.
-
-        \todo These scans could easily be vectorized. Templating could render
-        this a bit tricky.
      */
     size_t findFreeBlock() locklessNeverInline
     {
-        for (size_t i = 0; i < BitfieldSize; ++i) {
+
+        // Synchronization-free scan for free blocks.
+        for (size_t i = md.allocStart; i < BitfieldSize; md.allocStart = ++i) {
             if (!md.freeBlocks[i]) continue;
 
             size_t block = findFreeBlockInBitfield(i);
@@ -178,19 +180,23 @@ struct BlockPage
         }
 
         log(LogAlloc, "p-find-rec", "p=%p", this);
+        locklessCheckEq(md.allocStart, BitfieldSize, log);
 
+        // Move a chunk of recycled blocks into the free blocks bitfield.
         for (size_t i = 0; i < BitfieldSize; ++i) {
-            if (!md.recycledBlocks[i]) continue;
+            size_t index = (md.recycleStart + i) % BitfieldSize;
+            if (!md.recycledBlocks[index]) continue;
 
-            md.freeBlocks[i] |= md.recycledBlocks[i].exchange(0ULL);
+            md.freeBlocks[index] |= md.recycledBlocks[index].exchange(0ULL);
+            md.recycleStart = (index + 1) % BitfieldSize;
+            md.allocStart = index;
 
-            size_t block = findFreeBlockInBitfield(i);
+            size_t block = findFreeBlockInBitfield(index);
             locklessCheckNe(block, -1ULL, log);
             return block;
         }
 
-        log(LogAlloc, "p-find-nop", "p=%p", this);
-        return -1;
+        return -1ULL;
     }
 
     bool hasFreeBlock()
