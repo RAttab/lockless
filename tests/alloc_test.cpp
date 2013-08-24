@@ -41,17 +41,6 @@ using namespace lockless::details;
     (0x10) (0x1F) (0x30) (0x8F) (0xFFFF)
 
 
-void checkPow2(size_t val)
-{
-    locklessCheckEq(val & (val - 1), 0ULL, NullLog);
-}
-
-void checkAlign(size_t val, size_t align)
-{
-    checkPow2(align);
-    locklessCheckEq(val & (align - 1), 0ULL, NullLog);
-}
-
 template<typename Policy>
 void fillBlock(void* block, uint8_t value = 0)
 {
@@ -88,7 +77,7 @@ BOOST_AUTO_TEST_CASE(policyTest)
     cerr << fmtTitle("policy - packed", '=') << endl;
 
     auto checkFn = [] (size_t blockSize, size_t pageSize) {
-        checkPow2(pageSize);
+        checkPow2(pageSize, NullLog, locklessCtx());
         locklessCheckGe(pageSize, 4096ULL, NullLog);
 
         if (blockSize)
@@ -107,7 +96,7 @@ BOOST_AUTO_TEST_CASE(policyTest)
 
     auto checkAlignFn = [&] (size_t blockSize, size_t pageSize) {
         checkFn(blockSize, pageSize);
-        checkAlign(blockSize, 8);
+        checkAlign(blockSize, 8, NullLog, locklessCtx());
     };
 
 
@@ -133,7 +122,7 @@ BlockPage<Policy>* createPage()
 
     Page* page = Page::create();
 
-    checkAlign(uintptr_t(page), Policy::PageSize);
+    checkAlign(uintptr_t(page), Policy::PageSize, NullLog, locklessCtx());
     locklessCheck(!page->next(), NullLog);
     locklessCheck(page->hasFreeBlock(), NullLog);
 

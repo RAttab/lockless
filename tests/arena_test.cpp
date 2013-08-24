@@ -20,24 +20,38 @@
 
 #include <boost/test/unit_test.hpp>
 #include <unordered_set>
+#include <unordered_map>
 
 using namespace std;
 using namespace lockless;
 
+uint8_t firstChar(uintptr_t ptr)
+{
+    return ((uint8_t*)ptr)[0];
+}
+
 BOOST_AUTO_TEST_CASE(allocTest)
 {
-    enum { Blocks = 2000 };
+    enum {
+        Iterations = 100,
+        Blocks = 2000,
+        Size = 8,
+    };
 
     Arena<PageSize> arena;
     auto& log = arena.log;
 
-    for (size_t attempt = 0; attempt < 5; ++attempt) {
+    for (size_t it = 0; it < Iterations; ++it) {
         unordered_set<uintptr_t> seen;
 
         for (size_t i = 0; i < Blocks; ++i) {
-            uintptr_t ptr = (uintptr_t) arena.alloc(8);
+            uintptr_t ptr = (uintptr_t) arena.alloc(Size);
             locklessCheck(seen.insert(ptr).second, log);
+            memset((void*)ptr, i, Size);
         }
+
+        for (uintptr_t ptr : seen)
+            checkMem((void*)ptr, Size, firstChar(ptr), log, locklessCtx());
 
         arena.clear();
     }
@@ -54,15 +68,22 @@ BOOST_AUTO_TEST_CASE(alignTest)
     Arena<PageSize> arena;
     auto& log = arena.log;
 
-    unordered_set<uintptr_t> seen;
+    unordered_map<uintptr_t, size_t> seen;
 
     for (size_t it = 0; it < Iterations; ++it) {
         for (size_t align = 1; align <= MaxAlign; align *= 2) {
             for (size_t size = 1; size <= MaxSize; ++size) {
                 uintptr_t ptr = (uintptr_t)arena.alloc(size, align);
-                locklessCheck(seen.insert(ptr).second, log);
-                locklessCheckEq(ptr, ptr & ~(align - 1), log);
+                locklessCheck(seen.insert(make_pair(ptr, size)).second, log);
+                checkAlign(ptr, align, log, locklessCtx());
+                memset((void*)ptr, it + align + size, size);
             }
         }
+    }
+
+    for (const auto& entry : seen) {
+        size_t ptr = entry.first;
+        size_t size = entry.second;
+        checkMem((void*)ptr, size, firstChar(ptr), log, locklessCtx());
     }
 }

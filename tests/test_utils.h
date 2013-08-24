@@ -10,6 +10,7 @@
 #define __lockess__test_h__
 
 #include <functional>
+#include <algorithm>
 #include <future>
 #include <thread>
 #include <random>
@@ -169,6 +170,34 @@ std::string randomString(size_t length, Engine& engine)
     std::string output;
     while (output.size() < length) output += source[dist(engine)];
     return output;
+}
+
+
+/******************************************************************************/
+/* PREDICATES                                                                 */
+/******************************************************************************/
+
+template<typename LogT>
+void checkPow2(size_t val, LogT& log, const CheckContext& ctx)
+{
+    locklessCheckOpCtx(==, val & (val - 1), 0ULL, log, ctx);
+}
+
+template<typename LogT>
+void checkAlign(size_t val, size_t align, LogT& log, const CheckContext& ctx)
+{
+    checkPow2(align, log, ctx);
+    locklessCheckOpCtx(==, val & (align - 1), 0ULL, log, ctx);
+}
+
+template<typename LogT>
+void checkMem(
+        void* block, size_t size, uint8_t value,
+        LogT& log, const CheckContext& ctx)
+{
+    uint8_t* pBlock = reinterpret_cast<uint8_t*>(block);
+    auto pred = [=] (uint8_t val) { return val == value; };
+    locklessCheckCtx(std::all_of(pBlock, pBlock + size, pred), log, ctx);
 }
 
 
