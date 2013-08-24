@@ -11,8 +11,6 @@
 #define LOCKLESS_ALLOC_DEBUG 1
 #define LOCKLESS_CHECK_ABORT 1
 
-#include <iostream>
-
 #include "arena.h"
 #include "check.h"
 #include "debug.h"
@@ -82,7 +80,7 @@ BOOST_AUTO_TEST_CASE(alignTest)
     }
 
     for (const auto& entry : seen) {
-        size_t ptr = entry.first;
+        uintptr_t ptr = entry.first;
         size_t size = entry.second;
         checkMem((void*)ptr, size, firstChar(ptr), log, locklessCtx());
     }
