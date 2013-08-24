@@ -206,20 +206,18 @@ dumpHuman(
     snprintf(buffer.data(), buffer.size(),
 
             "| %12s th=%3d it=%s "
-            "| s/ops=[ %s, %s, %s ] stddev=%s "
-            "| ops/s=[ %s, %s, %s ] stddev=%s",
+            "| s/ops=[ %s, %s, %s ] "
+            "| ops/s=[ %s, %s, %s ]",
 
             title.c_str(), thCount, fmtValue(itCount).c_str(),
 
             fmtElapsed(latency.min()).c_str(),
             fmtElapsed(latency.median()).c_str(),
             fmtElapsed(latency.max()).c_str(),
-            fmtElapsed(latency.stddev()).c_str(),
 
             fmtValue(throughput.min()).c_str(),
             fmtValue(throughput.median()).c_str(),
-            fmtValue(throughput.max()).c_str(),
-            fmtValue(throughput.stddev()).c_str());
+            fmtValue(throughput.max()).c_str());
 
     return std::string(buffer.data());
 }
