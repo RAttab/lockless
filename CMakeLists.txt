@@ -106,3 +106,5 @@ lockless_test(map_para)
 lockless_test(alloc)
 lockless_test(alloc_para)
 lockless_test(alloc_perf)
+
+lockless_test(arena)
