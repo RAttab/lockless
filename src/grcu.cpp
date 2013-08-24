@@ -61,13 +61,13 @@ struct GlobalRcuImpl
 {
     GlobalRcuImpl() : refCount(0)  {}
 
-    Lock refLock;
+    UnfairLock refLock;
     size_t refCount;
 
     atomic<size_t> epoch;
     List<Epochs> threadList;
 
-    Lock gcLock;
+    UnfairLock gcLock;
     ListNode<Epochs>* gcDump; // Used to gather the defer list of dead threads.
 
     DebuggingLog<10240, DebugRcu>::type log;
@@ -161,7 +161,7 @@ void constructTls(ListNode<Epochs>& node)
 void destructTls(ListNode<Epochs>& node)
 {
     // Ensures that we don't race with the destruction of the gRcu lock.
-    LockGuard<Lock> guard(gRcu.refLock);
+    LockGuard<UnfairLock> guard(gRcu.refLock);
 
     if (!gRcu.refCount) {
         // Make sure everything was properly cleaned up by the GlobalRcu
@@ -189,7 +189,7 @@ void destructTls(ListNode<Epochs>& node)
 
        In a way, it's a bit like a pseudo-rcu.
     */
-    LockGuard<Lock> waitForGc(gRcu.gcLock);
+    LockGuard<UnfairLock> waitForGc(gRcu.gcLock);
 }
 
 // Direct access to a node for a given thread.
@@ -210,7 +210,7 @@ GlobalRcu::
 GlobalRcu()
 {
     // Doing this lockless would be a pain and would be purty useless.
-    LockGuard<Lock> guard(gRcu.refLock);
+    LockGuard<UnfairLock> guard(gRcu.refLock);
 
     gRcu.refCount++;
     if (gRcu.refCount > 1) return;
@@ -223,7 +223,7 @@ GlobalRcu()
 GlobalRcu::
 ~GlobalRcu()
 {
-    LockGuard<Lock> guard(gRcu.refLock);
+    LockGuard<UnfairLock> guard(gRcu.refLock);
 
     gRcu.refCount--;
     if (gRcu.refCount > 0) return;
@@ -308,7 +308,7 @@ gc()
 {
     // Pointless to have more then 2 threads gc-ing and limitting to one
     // significantly simplifies the algo.
-    TryLockGuard<Lock> guard(gRcu.gcLock);
+    TryLockGuard<UnfairLock> guard(gRcu.gcLock);
     if (!guard) return false;
 
     return ::gc();
@@ -339,7 +339,7 @@ struct GcThreadImpl
 {
     GcThreadImpl() : refCount(0), shutdown(true) {}
 
-    Lock lock;
+    UnfairLock lock;
     size_t refCount;
 
     atomic<bool> shutdown;
@@ -382,7 +382,7 @@ void doGcThread()
 GcThread::
 GcThread() : joined(false)
 {
-    lock_guard<Lock> guard(gcThread.lock);
+    lock_guard<UnfairLock> guard(gcThread.lock);
     if (++gcThread.refCount > 1) return;
 
     gcThread.shutdown = false;
@@ -396,7 +396,7 @@ join()
     if (joined) return;
     joined = true;
 
-    lock_guard<Lock> guard(gcThread.lock);
+    lock_guard<UnfairLock> guard(gcThread.lock);
     locklessCheck(!gcThread.shutdown, gcThread.log);
     if (--gcThread.refCount > 0) return;
 
@@ -412,7 +412,7 @@ detach()
     if (joined) return;
     joined = true;
 
-    lock_guard<Lock> guard(gcThread.lock);
+    lock_guard<UnfairLock> guard(gcThread.lock);
     locklessCheck(!gcThread.shutdown, gcThread.log);
     if (--gcThread.refCount > 0) return;
 

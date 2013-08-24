@@ -22,7 +22,7 @@ namespace lockless {
 /* CHECK                                                                      */
 /******************************************************************************/
 
-namespace details { Lock checkDumpLock; }
+namespace details { UnfairLock checkDumpLock; }
 
 
 /******************************************************************************/
@@ -35,7 +35,7 @@ struct
 {
     struct sigaction oldact;
     function<void()> callback;
-    Lock lock;
+    UnfairLock lock;
 
 } sigconfig;
 

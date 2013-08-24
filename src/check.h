@@ -46,7 +46,7 @@ struct CheckContext
 namespace details {
 
 // Required to make sure log is fully dumped before aborting.
-extern Lock checkDumpLock;
+extern UnfairLock checkDumpLock;
 
 } // namespace details
 
