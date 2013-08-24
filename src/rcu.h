@@ -9,6 +9,7 @@
 #define __lockless__rcu_h__
 
 #include "rcu_guard.h"
+#include "lock.h"
 #include "list.h"
 #include "debug.h"
 #include "log.h"
@@ -24,7 +25,7 @@ namespace lockless {
 /* RCU                                                                        */
 /******************************************************************************/
 
-struct Rcu
+struct Rcu : public Lock
 {
     typedef std::function<void()> DeferFn;
 
@@ -39,10 +40,6 @@ struct Rcu
         doDeferred(epochs[0].deferList.head.exchange(nullptr));
         doDeferred(epochs[1].deferList.head.exchange(nullptr));
     }
-
-    Rcu(const Rcu&) = delete;
-    Rcu& operator=(const Rcu&) = delete;
-
 
     size_t enter()
     {
@@ -191,9 +188,7 @@ private:
     Epoch epochs[2];
 
 public:
-
     DebuggingLog<10240, DebugRcu>::type log;
-
 };
 
 } // namespace lockless
