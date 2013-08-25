@@ -104,7 +104,7 @@ struct Arena
 
         Page* page = head;
 
-        for (size_t attempt = 0; attempt < 3; ++attempt) {
+        for (size_t attempt = 0; attempt < 10; ++attempt) {
 
             if (page) {
                 void* ptr = align ? page->alloc(size, align) : page->alloc(size);
