@@ -157,45 +157,45 @@ int main(int argc, char** argv)
 
     Format fmt = csvOutput ? Csv : Human;
 
-    bool arena = false; // segfaults :(
+    bool arena = true;
     bool balloc = true;
     bool tcmalloc = true;
 
     cerr << format("value=%s, ring=%s\n",
             fmtValue(1).c_str(), fmtValue(10).c_str());
-    if (arena) runRingBufferTest<ArenaTag, 1, 10>(thCount, itCount, fmt);
-    if (balloc) runRingBufferTest<BallocTag, 1, 10>(thCount, itCount, fmt);
-    if (tcmalloc) runRingBufferTest<TCMallocTag, 1, 10>(thCount, itCount, fmt);
+    if (arena)     runRingBufferTest<ArenaTag, 1, 10>(thCount, itCount, fmt);
+    if (balloc)    runRingBufferTest<BallocTag, 1, 10>(thCount, itCount, fmt);
+    if (tcmalloc)  runRingBufferTest<TCMallocTag, 1, 10>(thCount, itCount, fmt);
 
     cerr << format("\nvalue=%s, ring=%s\n",
             fmtValue(1).c_str(), fmtValue(1000).c_str());
-    if (arena) runRingBufferTest<ArenaTag, 1, 1000>(thCount, itCount, fmt);
-    if (balloc) runRingBufferTest<BallocTag, 1, 1000>(thCount, itCount, fmt);
-    if (tcmalloc) runRingBufferTest<TCMallocTag, 1, 1000>(thCount, itCount, fmt);
+    if (arena)     runRingBufferTest<ArenaTag, 1, 1000>(thCount, itCount, fmt);
+    if (balloc)    runRingBufferTest<BallocTag, 1, 1000>(thCount, itCount, fmt);
+    if (tcmalloc)  runRingBufferTest<TCMallocTag, 1, 1000>(thCount, itCount, fmt);
 
     cerr << format("\nvalue=%s, ring=%s\n",
             fmtValue(11).c_str(), fmtValue(10).c_str());
-    if (arena) runRingBufferTest<ArenaTag, 11, 10>(thCount, itCount, fmt);
-    if (balloc) runRingBufferTest<BallocTag, 11, 10>(thCount, itCount, fmt);
-    if (tcmalloc) runRingBufferTest<TCMallocTag, 11, 10>(thCount, itCount, fmt);
+    if (arena)     runRingBufferTest<ArenaTag, 11, 10>(thCount, itCount, fmt);
+    if (balloc)    runRingBufferTest<BallocTag, 11, 10>(thCount, itCount, fmt);
+    if (tcmalloc)  runRingBufferTest<TCMallocTag, 11, 10>(thCount, itCount, fmt);
 
     cerr << format("\nvalue=%s, ring=%s\n",
             fmtValue(11).c_str(), fmtValue(1000).c_str());
-    if (arena) runRingBufferTest<ArenaTag, 11, 1000>(thCount, itCount, fmt);
-    if (balloc) runRingBufferTest<BallocTag, 11, 1000>(thCount, itCount, fmt);
-    if (tcmalloc) runRingBufferTest<TCMallocTag, 11, 1000>(thCount, itCount, fmt);
+    if (arena)     runRingBufferTest<ArenaTag, 11, 1000>(thCount, itCount, fmt);
+    if (balloc)    runRingBufferTest<BallocTag, 11, 1000>(thCount, itCount, fmt);
+    if (tcmalloc)  runRingBufferTest<TCMallocTag, 11, 1000>(thCount, itCount, fmt);
 
     cerr << format("\nvalue=%s, ring=%s\n",
             fmtValue(65).c_str(), fmtValue(10).c_str());
-    if (arena) runRingBufferTest<ArenaTag, 65, 10>(thCount, itCount, fmt);
-    if (balloc) runRingBufferTest<BallocTag, 65, 10>(thCount, itCount, fmt);
-    if (tcmalloc) runRingBufferTest<TCMallocTag, 65, 10>(thCount, itCount, fmt);
+    if (arena)     runRingBufferTest<ArenaTag, 65, 10>(thCount, itCount, fmt);
+    if (balloc)    runRingBufferTest<BallocTag, 65, 10>(thCount, itCount, fmt);
+    if (tcmalloc)  runRingBufferTest<TCMallocTag, 65, 10>(thCount, itCount, fmt);
 
     cerr << format("\nvalue=%s, ring=%s\n",
             fmtValue(65).c_str(), fmtValue(1000).c_str());
-    if (arena) runRingBufferTest<ArenaTag, 65, 1000>(thCount, itCount, fmt);
-    if (balloc) runRingBufferTest<BallocTag, 65, 1000>(thCount, itCount, fmt);
-    if (tcmalloc) runRingBufferTest<TCMallocTag, 65, 1000>(thCount, itCount, fmt);
+    if (arena)     runRingBufferTest<ArenaTag, 65, 1000>(thCount, itCount, fmt);
+    if (balloc)    runRingBufferTest<BallocTag, 65, 1000>(thCount, itCount, fmt);
+    if (tcmalloc)  runRingBufferTest<TCMallocTag, 65, 1000>(thCount, itCount, fmt);
 
     return 0;
 
