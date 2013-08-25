@@ -17,7 +17,7 @@
 
 #define locklessAlign(x)     __attribute__((aligned(x)))
 #define locklessPacked       __attribute__((__packed__))
-#define locklessAlwaysInline __attribute__(always_inline))
+#define locklessAlwaysInline __attribute__((always_inline))
 #define locklessNeverInline  __attribute__((noinline))
 #define locklessNonNull      __attribute__((nonnull))
 #define locklessNoReturn     __attribute__(noreturn))
