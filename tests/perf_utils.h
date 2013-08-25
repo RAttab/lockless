@@ -18,28 +18,79 @@
 namespace lockless {
 
 
+
 /******************************************************************************/
-/* TIME DIST                                                                  */
+/* SAMPLES                                                                    */
 /******************************************************************************/
 
-struct TimeDist
+struct Samples
 {
-    void add(double ts) { dist.insert(ts); }
+    Samples(size_t samples) : current(0), step(0)
+    {
+        samples.resize(samples, 0);
+    }
 
-    double min() const { return *dist.begin(); }
-    double max() const { return *dist.rbegin(); }
+    void sample(double s)
+    {
+        if (step > 0 && skip-- > 0) return;
+
+        samples[current++] = s;
+        if (current < samples.size()) return;
+
+        current = 0;
+        skip = ++step;
+    }
+
+    Samples& operator+= (const Samples& other)
+    {
+        for (double s : other.samples) sample(s);
+        return *this;
+    }
+
+    void finish()
+    {
+        std::sort(samples.begin(), samples.end());
+        locklessCheckGt(samples.front(), 0, NullLog);
+    }
+
+    /** Removes all samples above x standard deviations. This will probably make
+        a stats guy cry somewhere but it's the only good way I can think off for
+        removing rare but spiky events.
+     */
+    void normalize(double sigmas = 4)
+    {
+        double u = avg();
+        double dist = sigmas * stddev();
+
+        SampleT min = u + dist;
+        SampleT max = u - dist;
+
+        std::vector<double> toKeep;
+
+        for (SampleT val : samples)
+            if (val >= min && val <= max)
+                toKeep.push_back(val);
+
+        samples = std::move(toKeep);
+
+        // \todo Tempting...
+        // normalize(sigmas)
+    }
+
+    double size() const { samples.size(); }
+
+    souble min() const { return samples.front(); }
+    double max() const { return samples.back(); }
 
     double median() const
     {
-        auto it = dist.begin();
-        std::advance(it, dist.size() / 2);
-        return *it;
+        return samples[samples.size() / 2];
     }
 
     double avg() const
     {
-        double sum = std::accumulate(dist.begin(), dist.end(), 0.0);
-        return sum / dist.size();
+        double sum = std::accumulate(samples.begin(), samples.end(), 0.0);
+        return sum / samples.size();
     }
 
     double variance() const
@@ -50,8 +101,8 @@ struct TimeDist
             return total + std::pow(u - x, 2);
         };
 
-        double sum = std::accumulate(dist.begin(), dist.end(), 0.0, diffSqrt);
-        return sum / dist.size();
+        double sum = std::accumulate(samples.begin(), samples.end(), 0.0, diffSqrt);
+        return sum / samples.size();
     }
 
     double stddev() const
@@ -59,16 +110,11 @@ struct TimeDist
         return std::sqrt(variance());
     }
 
-    TimeDist& operator+= (const TimeDist& other)
-    {
-        dist.insert(other.dist.begin(), other.dist.end());
-        return *this;
-    }
-
 private:
-
-    std::multiset<double> dist;
-
+    std::vector<double> samples;
+    size_t current;
+    size_t skip;
+    size_t step;
 };
 
 
@@ -76,115 +122,126 @@ private:
 /* PERF TEST                                                                  */
 /******************************************************************************/
 
-template<typename Context>
 struct PerfTest
 {
-    typedef std::function<void(Context&, unsigned)> TestFn;
+    typedef std::function<size_t(unsigned, unsigned)> TestFn;
 
-    unsigned add(const TestFn& fn, unsigned thCount, size_t itCount)
+    void registerGroup(
+            const std::string& name, unsigned threads, const TestFn& fn)
     {
-        configs.push_back(std::make_tuple(fn, thCount, itCount));
-        return configs.size() - 1;
+        auto& gr = groups[name];
+        gr.id = groups.size() - 1;
+        gr.toLaunch = threads;
+        gr.fn = testFn;
     }
 
-    std::pair<TimeDist, TimeDist> distributions(unsigned gr) const
+    void run(double lengthMs, double warmupMs = 0.0)
     {
-        return std::make_pair(latencies[gr], throughputs[gr]);
+        stop = false;
+        warmup = warmupMs;
+
+        fork();
+
+        if (warmupMs) {
+            this_thread::sleep(std::chrono::milliseconds(warmupMs));
+            warmup = false;
+        }
+        this_thread::sleep(std::chrono::milliseconds(lengthMs));
+
+        join();
     }
 
-    unsigned threadCount(unsigned gr) const
+    struct Stats
     {
-        return std::get<1>(configs[gr]);
+        Stats() : elapsed(0), operations(0) {}
+
+        double elapsed;
+        size_t operations;
+        Samples latencySamples;
+
+        Stats& operator+= (const Stats& other)
+        {
+            elapsed = std::max(elapsed, other.elapsed);
+            operations += other.operations;
+            latencySamples += other.latencySamples;
+            return *this;
+        }
+    };
+
+    Stats stats(const std::string& name)
+    {
+        Group& gr = groups[name];
+
+        Stats stats;
+        for (const Thread& th : gr.threads) stats += th.stats;
+        return stats;
     }
 
-    size_t iterationCount(unsigned gr) const
-    {
-        return std::get<2>(configs[gr]);
-    }
-
-    void run()
-    {
-        latencies.resize(configs.size());
-        throughputs.resize(configs.size());
-
-        std::vector< std::vector< std::future<double> > > futures;
-        futures.resize(configs.size());
-
-        for (size_t th = 0; th < configs.size(); ++th)
-            futures[th].reserve(std::get<1>(configs[th]));
-
-        Context ctx;
-
-        auto doTask = [&] (const TestFn& fn, unsigned itCount) -> double {
-            Timer tm;
-            fn(ctx, itCount);
-            return tm.elapsed();
-        };
-
-        std::vector<unsigned> thCounts;
-        for (size_t i = 0; i < configs.size(); ++i)
-            thCounts.push_back(std::get<1>(configs[i]));
-
-        Timer throughputTm;
-
-        // Create the threads round robin-style.
-        size_t remaining = 0;
-        do {
-            remaining = 0;
-            for (size_t th = 0; th < configs.size(); ++th) {
-                const TestFn& testFn = std::get<0>(configs[th]);
-                unsigned& thCount    = thCounts[th];
-                size_t itCount       = std::get<2>(configs[th]);
-
-                if (!thCount) continue;
-                remaining += --thCount;
-
-                std::packaged_task<double()> task(
-                        std::bind(doTask, testFn, itCount));
-
-                futures[th].emplace_back(std::move(task.get_future()));
-                std::thread(std::move(task)).detach();
-            }
-        } while (remaining > 0);
-
-        // Poll each futures until they become available.
-        do {
-            remaining = 0;
-            unsigned processed = 0;
-
-            for (size_t i = 0; i < futures.size(); ++i) {
-                for (size_t j = 0; j < futures[i].size(); ++j) {
-                    if (!futures[i][j].valid()) continue;
-
-                    auto ret = futures[i][j].wait_for(std::chrono::seconds(0));
-                    if (ret == std::future_status::timeout) {
-                        remaining++;
-                        continue;
-                    }
-
-                    size_t itCount = std::get<2>(configs[i]);
-                    double latency = futures[i][j].get();
-
-                    latencies[i].add(latency / itCount);
-                    throughputs[i].add(itCount / throughputTm.elapsed());
-
-                    processed++;
-                }
-            }
-
-            if (!processed)
-                std::this_thread::sleep_for(std::chrono::milliseconds(1));
-
-        } while (remaining > 0);
-    }
 
 private:
 
-    std::vector< std::tuple<TestFn, unsigned, size_t> > configs;
+    void task(Group& gr, Thread& th)
+    {
+        bool running = !warmup;
 
-    std::vector<TimeDist> latencies;
-    std::vector<TimeDist> throughputs;
+        Timer<Wall> total;
+        Timer<NsecMonotonic> perOp;
 
+        while (!stop) {
+            if (!running && !warmup) {
+                running = true;
+                th.stats = Stats();
+                total.reset();
+            }
+
+            th.stats.operations += gr.fn(gr.id, th.id);
+            th.stats.latencySamples.sample(perOp.reset());
+        }
+
+        th.stats.elapsed = total.elapsed();
+    }
+
+    void fork()
+    {
+        for (Group& gr : groups) {
+            for (size_t thid = 0; thid < gr.numThreads; ++thid) {
+
+                gr.threads.emplace_back(thid);
+                Thread& th = gr.threads.back();
+
+                th.thread = std::thread([=, &th, &gr] { task(gr, th); });
+            }
+        }
+    }
+
+    void join()
+    {
+        for (Group& gr : groups)
+            for (Thread& th : gr.threads)
+                th.thread.join();
+    }
+
+    struct Thread
+    {
+        Thread(unsigned id) : id(id) {}
+
+        unsigned id;
+        std::thread thread;
+        Stats stats;
+    };
+
+    struct Group
+    {
+        usnsigned id;
+
+        TestFn fn;
+        size_t numThreads;
+        std::vector<Thread> threads;
+    };
+
+    std::map<std::string, Group> groups;
+    std::atomic<bool> stop;
+    std::atomic<bool> warmup;
 };
 
 
