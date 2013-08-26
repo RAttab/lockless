@@ -14,6 +14,7 @@
 using namespace std;
 using namespace lockless;
 
+enum { Iterations = 100 };
 
 /******************************************************************************/
 /* OPS                                                                        */
@@ -27,17 +28,21 @@ struct Context
 };
 
 template<typename Rcu>
-void doEnterExitThread(Context<Rcu>& ctx, unsigned itCount)
+size_t doEnterExitThread(Context<Rcu>& ctx, unsigned)
 {
-    for (size_t it = 0; it < itCount; ++it)
+    for (size_t it = 0; it < Iterations; ++it)
         RcuGuard<Rcu> guard(ctx.rcu);
+
+    return Iterations;
 }
 
 template<typename Rcu>
-void doDeferThread(Context<Rcu>& ctx, unsigned itCount)
+size_t doDeferThread(Context<Rcu>& ctx, unsigned)
 {
-    for (size_t it = 0; it < itCount; ++it)
+    for (size_t it = 0; it < Iterations; ++it)
         ctx.rcu.defer([&] { ctx.counter++; });
+
+    return Iterations;
 }
 
 
@@ -48,18 +53,17 @@ void doDeferThread(Context<Rcu>& ctx, unsigned itCount)
 template<typename Rcu>
 void runTest(
         unsigned thCount,
-        size_t itCount,
-        Format fmt,
-        const array<string, 2>& titles )
+        size_t lengthMs,
+        const array<string, 2>& titles)
 {
     PerfTest< Context<Rcu> > perf;
-    perf.add(doEnterExitThread<Rcu>, thCount, itCount);
-    perf.add(doDeferThread<Rcu>, thCount, itCount);
+    perf.add("epochs", doEnterExitThread<Rcu>, thCount);
+    perf.add("defer", doDeferThread<Rcu>, thCount);
 
-    perf.run();
+    perf.run(lengthMs);
 
-    for (unsigned gr = 0; gr < 2; ++gr)
-        cerr << dump(perf, gr, titles[gr], fmt) << endl;
+    cerr << perf.stats("epochs").print(titles[0]) << endl;
+    cerr << perf.stats("defer").print(titles[1]) << endl;
 }
 
 int main(int argc, char** argv)
@@ -67,19 +71,13 @@ int main(int argc, char** argv)
     unsigned thCount = 4;
     if (argc > 1) thCount = stoul(string(argv[1]));
 
-    size_t itCount = 10000;
-    if (argc > 2) itCount = stoull(string(argv[2]));
+    size_t lengthMs = 2000;
+    if (argc > 2) lengthMs = stoull(string(argv[2]));
 
-    bool csvOutput = false;
-    if (argc > 3) csvOutput = stoi(string(argv[3]));
-
-    Format fmt = csvOutput ? Csv : Human;
-
-    runTest<Rcu>(thCount, itCount, fmt, {{ "rcu-epochs", "rcu-defer" }});
+    runTest<Rcu>(thCount, lengthMs, {{ "rcu-epochs", "rcu-defer" }});
     {
         GcThread gcThread;
-        runTest<GlobalRcu>(
-                thCount, itCount, fmt, {{ "grcu-epochs", "grcu-defer" }});
+        runTest<GlobalRcu>(thCount, lengthMs, {{ "grcu-epochs", "grcu-defer" }});
     }
 
 
