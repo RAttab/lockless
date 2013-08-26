@@ -13,6 +13,7 @@
 using namespace std;
 using namespace lockless;
 
+enum { Iterations = 10000 };
 
 /******************************************************************************/
 /* TLS OPS                                                                    */
@@ -31,15 +32,16 @@ Tls<volatile size_t, Tag> tls;
     So the conclussion is that our Tls class should only be used when our value
     isn't a POD or if we need the constructor and destructor callback.
 */
-void doTlsThread(unsigned, unsigned itCount)
+size_t doTlsThread(unsigned, unsigned)
 {
-    *tls = 0;
     size_t value;
 
-    for (size_t i = 0; i < itCount; ++i) {
+    for (size_t i = 0; i < Iterations; ++i) {
         value = *tls;
         *tls = value + 1;
     }
+
+    return Iterations;
 }
 
 
@@ -50,15 +52,16 @@ void doTlsThread(unsigned, unsigned itCount)
 // Volatile forces a read and a write on each iteration.
 locklessTls volatile size_t gccTls;
 
-void doGccThread(unsigned, unsigned itCount)
+size_t doGccThread(unsigned, unsigned)
 {
-    gccTls = 0;
     size_t value;
 
-    for (size_t i = 0; i < itCount; ++i) {
+    for (size_t i = 0; i < Iterations; ++i) {
         value = gccTls;
         gccTls = value + 1;
     }
+
+    return Iterations;
 }
 
 
@@ -87,14 +90,18 @@ struct PthreadContext
 
     Oh well, mostly disregard the results of this test.
 */
-void doPthreadThread(PthreadContext&, unsigned itCount)
+size_t doPthreadThread(PthreadContext&, unsigned)
 {
-    pthread_setspecific(pthreadKey, new size_t());
-    for (size_t i = 0; i < itCount; ++i) {
+    for (size_t i = 0; i < Iterations; ++i) {
         size_t* value = static_cast<size_t*>(pthread_getspecific(pthreadKey));
+        if (!value) pthread_setspecific(pthreadKey, value = new size_t());
+
         *value += 1;
+
         pthread_setspecific(pthreadKey, value);
     }
+
+    return Iterations;
 }
 
 
@@ -104,31 +111,26 @@ void doPthreadThread(PthreadContext&, unsigned itCount)
 
 int main(int argc, char** argv)
 {
-    unsigned thCount = 2;
+    unsigned thCount = 8;
     if (argc > 1) thCount = stoul(string(argv[1]));
 
-    size_t itCount = 1000000;
-    if (argc > 2) itCount = stoull(string(argv[2]));
-
-    bool csvOutput = false;
-    if (argc > 3) csvOutput = stoi(string(argv[3]));
-
-    Format fmt = csvOutput ? Csv : Human;
+    size_t lengthMs = 5000;
+    if (argc > 2) lengthMs = stoull(string(argv[2]));
 
     PerfTest<unsigned> tlsPerf;
-    tlsPerf.add(doTlsThread, thCount, itCount);
-    tlsPerf.run();
-    cerr << dump(tlsPerf, 0, "tls", fmt) << endl;
+    tlsPerf.add("tls", doTlsThread, thCount);
+    tlsPerf.run(lengthMs);
+    cerr << tlsPerf.stats("tls").print("tls") << endl;
 
     PerfTest<unsigned> gccPerf;
-    gccPerf.add(doGccThread, thCount, itCount);
-    gccPerf.run();
-    cerr << dump(gccPerf, 0, "gcc", fmt) << endl;
+    gccPerf.add("gcc", doGccThread, thCount);
+    gccPerf.run(lengthMs);
+    cerr << gccPerf.stats("gcc").print("gcc") << endl;
 
     PerfTest<PthreadContext> pthreadPerf;
-    pthreadPerf.add(doPthreadThread, thCount, itCount);
-    pthreadPerf.run();
-    cerr << dump(pthreadPerf, 0, "pthread", fmt) << endl;
+    pthreadPerf.add("pthread", doPthreadThread, thCount);
+    pthreadPerf.run(lengthMs);
+    cerr << pthreadPerf.stats("pthread").print("pthread") << endl;
 
     return 0;
 

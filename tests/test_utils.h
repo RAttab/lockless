@@ -9,6 +9,9 @@
 #ifndef __lockess__test_h__
 #define __lockess__test_h__
 
+#include "utils.h"
+#include "check.h"
+
 #include <functional>
 #include <algorithm>
 #include <future>
