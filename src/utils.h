@@ -25,8 +25,7 @@ namespace lockless {
 /** \todo Still undecided about whether it's a good idea to have this... */
 #define locklessEnum static constexpr
 
-#define locklessStaticAssert(x) \
-    static_assert(x, #x)
+#define locklessStaticAssert(x) static_assert(x, #x)
 
 template<size_t X>
 struct IsPow2
@@ -43,7 +42,7 @@ struct IsPow2
 /** I'm aware that this doesn't take into account the bajillion of corner cases
     with integer division. That being said, it's only to be used for unsigned
     integers where underflows are taken care of. I don't believe it's possible
-    to overflow it but it probably is so don't do that...
+    to overflow it but it probably is so... don't do that.
 */
 template<size_t Num, size_t Div>
 struct CeilDiv
@@ -142,8 +141,8 @@ struct CalcPadding
 
 /** To summarize the giant wall of text above, T must be packed and therefor
     POD-ed for this class to have any chance of doing anything when working for
-    some edge cases. Since the rules are annoying tricky to get right, there's a
-    CheckPad struct which allows you to determine whether a struct needs to be
+    some edge cases. Since the rules are annoyingly tricky to get right, there's
+    a CheckPad struct which allows you to determine whether a struct needs to be
     packed or not.
  */
 template<typename T, size_t Align>
@@ -153,8 +152,8 @@ struct Pad :
 {};
 
 
-/** Since the packing rules are so damn had to figure out, this class allows you
-    to quickly figure out whether we need to pack T or not. Creating a static
+/** Since the packing rules are so damn hard to figure out, this class allows
+    you to quickly check whether we need to pack T or not. Creating a static
     assert after every instanciation of Pad is highly recommended.
  */
 template<typename T, size_t Align>
