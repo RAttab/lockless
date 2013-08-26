@@ -20,16 +20,20 @@ struct Context
     Queue<size_t> queue;
 };
 
-void doPushThread(Context& ctx, unsigned itCount)
+enum { Iterations = 100 };
+
+size_t doPushThread(Context& ctx, unsigned)
 {
-    for (size_t i = 0; i < itCount; ++i)
+    for (size_t i = 0; i < Iterations; ++i)
         ctx.queue.push(1);
+    return Iterations;
 }
 
-void doPopThread(Context& ctx, unsigned itCount)
+size_t doPopThread(Context& ctx, unsigned)
 {
-    for (size_t i = 0; i < itCount; ++i)
+    for (size_t i = 0; i < Iterations; ++i)
         ctx.queue.pop();
+    return Iterations;
 }
 
 /******************************************************************************/
@@ -41,23 +45,18 @@ int main(int argc, char** argv)
     unsigned thCount = 4;
     if (argc > 1) thCount = stoul(string(argv[1]));
 
-    size_t itCount = 10000;
-    if (argc > 2) itCount = stoull(string(argv[2]));
-
-    bool csvOutput = false;
-    if (argc > 3) csvOutput = stoi(string(argv[3]));
-
-    Format fmt = csvOutput ? Csv : Human;
+    size_t lengthMs = 1000;
+    if (argc > 2) lengthMs = stoull(string(argv[2]));
 
     PerfTest<Context> perf;
-    perf.add(doPushThread, thCount, itCount);
-    perf.add(doPopThread, thCount, itCount);
+    perf.add("push", doPushThread, thCount);
+    perf.add("pop", doPopThread, thCount);
 
-    perf.run();
+    perf.run(lengthMs);
 
     array<string, 2> titles {{ "push", "pop" }};
-    for (unsigned gr = 0; gr < 2; ++gr)
-        cerr << dump(perf, gr, titles[gr], fmt) << endl;
+    for (const string& title : titles)
+        cerr << perf.stats(title).print(title) << endl;
 
     return 0;
 
