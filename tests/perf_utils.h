@@ -50,8 +50,6 @@ struct Samples
     void finish()
     {
         std::sort(samples.begin(), samples.end());
-        locklessCheckGt(samples.front(), 0, NullLog);
-
 
         auto notZero = [] (double v) { return v != 0; };
         auto it = find_if(samples.begin(), samples.end(), notZero);
@@ -227,8 +225,11 @@ private:
                 total.reset();
             }
 
-            th.stats.operations += gr.fn(ctx, th.id);
-            th.stats.latencySamples.sample(perOp.reset());
+            size_t ops = gr.fn(ctx, th.id);
+            double latency = double(perOp.reset()) / ops;
+
+            th.stats.operations += ops;
+            th.stats.latencySamples.sample(latency);
         }
 
         th.stats.elapsed = total.elapsed();
