@@ -65,6 +65,8 @@ const char* Value<Size, BallocTag>::name = "balloc";
 /* ARENA VALUE                                                                */
 /******************************************************************************/
 
+locklessEnum size_t ArenaSize = PageSize * 1000;
+
 struct ArenaTag {};
 
 template<size_t Size>
@@ -73,7 +75,7 @@ struct Value<Size, ArenaTag>
     static const char* name;
     array<uint64_t, Size> v;
 
-    static Arena<PageSize> arena;
+    static Arena<ArenaSize> arena;
 
     typedef Value<Size, ArenaTag> AllocType;
     void* operator new(size_t size)
@@ -87,7 +89,7 @@ template<size_t Size>
 const char* Value<Size, ArenaTag>::name = "arena";
 
 template<size_t Size>
-Arena<PageSize> Value<Size, ArenaTag>::arena;
+Arena<ArenaSize> Value<Size, ArenaTag>::arena;
 
 
 /******************************************************************************/
@@ -117,13 +119,17 @@ struct RingBuffer
 /******************************************************************************/
 
 template<typename Value, size_t Size>
-void doRingBufferThread(RingBuffer<Value, Size>& ctx, unsigned itCount)
+size_t doRingBufferThread(RingBuffer<Value, Size>& ctx, unsigned)
 {
-    for (size_t it = 0; it < itCount; ++it) {
+    enum { Iterations = 1000 };
+
+    for (size_t it = 0; it < Iterations; ++it) {
         size_t index = it % ctx.ring.size();
         Value* old = ctx.ring[index].exchange(new Value());
         delete old;
     }
+
+    return Iterations;
 }
 
 
@@ -132,30 +138,25 @@ void doRingBufferThread(RingBuffer<Value, Size>& ctx, unsigned itCount)
 /******************************************************************************/
 
 template<typename Tag, size_t ValueSize, size_t RingSize>
-void runRingBufferTest(unsigned thCount, unsigned itCount, Format fmt)
+void runRingBufferTest(unsigned thCount, unsigned lengthMs)
 {
     typedef Value<ValueSize, Tag> Value;
     typedef RingBuffer<Value, RingSize> Context;
 
     PerfTest<Context> perf;
-    perf.add(doRingBufferThread<Value, RingSize>, thCount, itCount);
-    perf.run();
+    perf.add(Value::name, doRingBufferThread<Value, RingSize>, thCount);
+    perf.run(lengthMs);
 
-    cerr << dump(perf, 0, Value::name, fmt) << endl;
+    cerr << perf.stats(Value::name).print(Value::name) << endl;
 }
 
 int main(int argc, char** argv)
 {
-    unsigned thCount = 2;
+    unsigned thCount = 4;
     if (argc > 1) thCount = stoul(string(argv[1]));
 
-    size_t itCount = 1000000;
-    if (argc > 2) itCount = stoull(string(argv[2]));
-
-    bool csvOutput = false;
-    if (argc > 3) csvOutput = stoi(string(argv[3]));
-
-    Format fmt = csvOutput ? Csv : Human;
+    size_t lengthMs = 1000;
+    if (argc > 2) lengthMs = stoull(string(argv[2]));
 
     bool arena = true;
     bool balloc = true;
@@ -163,39 +164,39 @@ int main(int argc, char** argv)
 
     cerr << format("value=%s, ring=%s\n",
             fmtValue(1).c_str(), fmtValue(10).c_str());
-    if (arena)     runRingBufferTest<ArenaTag, 1, 10>(thCount, itCount, fmt);
-    if (balloc)    runRingBufferTest<BallocTag, 1, 10>(thCount, itCount, fmt);
-    if (tcmalloc)  runRingBufferTest<TCMallocTag, 1, 10>(thCount, itCount, fmt);
+    if (tcmalloc) runRingBufferTest<TCMallocTag, 1, 10>(thCount, lengthMs);
+    if (balloc)   runRingBufferTest<BallocTag, 1, 10>(thCount, lengthMs);
+    if (arena)    runRingBufferTest<ArenaTag, 1, 10>(thCount, lengthMs);
 
     cerr << format("\nvalue=%s, ring=%s\n",
             fmtValue(1).c_str(), fmtValue(1000).c_str());
-    if (arena)     runRingBufferTest<ArenaTag, 1, 1000>(thCount, itCount, fmt);
-    if (balloc)    runRingBufferTest<BallocTag, 1, 1000>(thCount, itCount, fmt);
-    if (tcmalloc)  runRingBufferTest<TCMallocTag, 1, 1000>(thCount, itCount, fmt);
+    if (tcmalloc) runRingBufferTest<TCMallocTag, 1, 1000>(thCount, lengthMs);
+    if (balloc)   runRingBufferTest<BallocTag, 1, 1000>(thCount, lengthMs);
+    if (arena)    runRingBufferTest<ArenaTag, 1, 1000>(thCount, lengthMs);
 
     cerr << format("\nvalue=%s, ring=%s\n",
             fmtValue(11).c_str(), fmtValue(10).c_str());
-    if (arena)     runRingBufferTest<ArenaTag, 11, 10>(thCount, itCount, fmt);
-    if (balloc)    runRingBufferTest<BallocTag, 11, 10>(thCount, itCount, fmt);
-    if (tcmalloc)  runRingBufferTest<TCMallocTag, 11, 10>(thCount, itCount, fmt);
+    if (tcmalloc) runRingBufferTest<TCMallocTag, 11, 10>(thCount, lengthMs);
+    if (balloc)   runRingBufferTest<BallocTag, 11, 10>(thCount, lengthMs);
+    if (arena)    runRingBufferTest<ArenaTag, 11, 10>(thCount, lengthMs);
 
     cerr << format("\nvalue=%s, ring=%s\n",
             fmtValue(11).c_str(), fmtValue(1000).c_str());
-    if (arena)     runRingBufferTest<ArenaTag, 11, 1000>(thCount, itCount, fmt);
-    if (balloc)    runRingBufferTest<BallocTag, 11, 1000>(thCount, itCount, fmt);
-    if (tcmalloc)  runRingBufferTest<TCMallocTag, 11, 1000>(thCount, itCount, fmt);
+    if (tcmalloc) runRingBufferTest<TCMallocTag, 11, 1000>(thCount, lengthMs);
+    if (balloc)   runRingBufferTest<BallocTag, 11, 1000>(thCount, lengthMs);
+    if (arena)    runRingBufferTest<ArenaTag, 11, 1000>(thCount, lengthMs);
 
     cerr << format("\nvalue=%s, ring=%s\n",
             fmtValue(65).c_str(), fmtValue(10).c_str());
-    if (arena)     runRingBufferTest<ArenaTag, 65, 10>(thCount, itCount, fmt);
-    if (balloc)    runRingBufferTest<BallocTag, 65, 10>(thCount, itCount, fmt);
-    if (tcmalloc)  runRingBufferTest<TCMallocTag, 65, 10>(thCount, itCount, fmt);
+    if (tcmalloc) runRingBufferTest<TCMallocTag, 65, 10>(thCount, lengthMs);
+    if (balloc)   runRingBufferTest<BallocTag, 65, 10>(thCount, lengthMs);
+    if (arena)    runRingBufferTest<ArenaTag, 65, 10>(thCount, lengthMs);
 
     cerr << format("\nvalue=%s, ring=%s\n",
             fmtValue(65).c_str(), fmtValue(1000).c_str());
-    if (arena)     runRingBufferTest<ArenaTag, 65, 1000>(thCount, itCount, fmt);
-    if (balloc)    runRingBufferTest<BallocTag, 65, 1000>(thCount, itCount, fmt);
-    if (tcmalloc)  runRingBufferTest<TCMallocTag, 65, 1000>(thCount, itCount, fmt);
+    if (tcmalloc) runRingBufferTest<TCMallocTag, 65, 1000>(thCount, lengthMs);
+    if (balloc)   runRingBufferTest<BallocTag, 65, 1000>(thCount, lengthMs);
+    if (arena)    runRingBufferTest<ArenaTag, 65, 1000>(thCount, lengthMs);
 
     return 0;
 
