@@ -166,7 +166,7 @@ struct PerfTest
 
             auto toSec = [] (double ns) { return ns * 0.0000000001; };
             return format(
-                    "%10s sec/ops=[ %s %s %s ] ops/sec=%s",
+                    "%-15s sec/ops=[ %s %s %s ] ops/sec=%s",
                     title.c_str(),
                     fmtElapsed(toSec(latencySamples.min())).c_str(),
                     fmtElapsed(toSec(latencySamples.median())).c_str(),
