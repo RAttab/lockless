@@ -142,7 +142,7 @@ struct NsecMonotonic
 template<typename Clock>
 struct Timer
 {
-    typedef Clock::ClockT ClockT;
+    typedef typename Clock::ClockT ClockT;
 
     Timer()
     {

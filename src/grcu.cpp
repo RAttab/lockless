@@ -356,11 +356,11 @@ void doGcThread()
 
     auto& log = gcThread.log;
 
-    log(LogRcu, "gc-start", "%lf", Time::wall());
+    log(LogRcu, "gc-start", "%lf", wall());
 
     GlobalRcu rcu;
     while (!gcThread.shutdown) {
-        Timer tm;
+        Timer<Wall> tm;
         bool success = rcu.gc();
 
         if (!success)
@@ -368,13 +368,13 @@ void doGcThread()
         else sleepMs = sleepMs - 1;
 
         log(LogRcu, "gc", "%lf - duration=%lf, sleep=%ld",
-                Time::wall(), tm.elapsed(), sleepMs);
+                wall(), tm.elapsed(), sleepMs);
 
         if (!sleepMs) sleepMs = 1;
         else this_thread::sleep_for(chrono::milliseconds(sleepMs));
     }
 
-    log(LogRcu, "gc-end", "%lf", Time::wall());
+    log(LogRcu, "gc-end", "%lf", wall());
 }
 
 } // namespace anonymous
