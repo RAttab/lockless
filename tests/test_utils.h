@@ -25,65 +25,35 @@ namespace lockless {
 
 std::string fmtElapsed(double elapsed)
 {
-    char scale;
+    static const std::string scaleIndicators = "smunpf?";
 
-    if (elapsed >= 1.0) scale = 's';
-
-    if (elapsed < 1.0) {
+    size_t i = 0;
+    while (elapsed < 1.0 && i < (scaleIndicators.size() - 1)) {
         elapsed *= 1000.0;
-        scale = 'm';
+        i++;
     }
 
-    if (elapsed < 1.0) {
-        elapsed *= 1000.0;
-        scale = 'u';
-    }
-
-    if (elapsed < 1.0) {
-        elapsed *= 1000.0;
-        scale = 'n';
-    }
-
-    std::array<char, 32> buffer;
-    snprintf(buffer.data(), buffer.size(), "%6.2f%c", elapsed, scale);
-    return std::string(buffer.data());
+    return format("%6.2f%c", elapsed, scaleIndicators[i]);
 }
 
 
 std::string fmtValue(double value)
 {
-    char scale;
+    static const std::string scaleIndicators = " kmgth?";
 
-    if (value >= 1.0) scale = ' ';
-
-    if (value >= 1000.0) {
+    size_t i = 0;
+    while (value >= 1000.0 && i < (scaleIndicators.size() - 1)) {
         value /= 1000.0;
-        scale = 'k';
+        i++;
     }
 
-    if (value >= 1000.0) {
-        value /= 1000.0;
-        scale = 'm';
-    }
-
-    if (value >= 1000.0) {
-        value /= 1000.0;
-        scale = 'g';
-    }
-
-    std::array<char, 32> buffer;
-    snprintf(buffer.data(), buffer.size(), "%6.2f%c", value, scale);
-    return std::string(buffer.data());
+    return format("%6.2f%c", value, scaleIndicators[i]);
 }
 
 std::string fmtTitle(const std::string& title, char fill = '-')
 {
-    std::array<char, 80> buffer;
     std::string filler(80 - title.size() - 4, fill);
-
-    snprintf(buffer.data(), buffer.size(), "[ %s ]%s",
-            title.c_str(), filler.c_str());
-    return std::string(buffer.data());
+    return format("[ %s ]%s", title.c_str(), filler.c_str());
 }
 
 /******************************************************************************/
