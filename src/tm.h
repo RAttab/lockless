@@ -10,12 +10,23 @@
 #ifndef __lockless__time_h__
 #define __lockless__time_h__
 
+#include <chrono>
+#include <thread>
 #include <cstdlib>
 #include <time.h>
 #include <unistd.h>
 
 namespace lockless {
 
+
+/******************************************************************************/
+/* SLEEP                                                                      */
+/******************************************************************************/
+
+void sleep(size_t ms)
+{
+    std::this_thread::sleep_for(std::chrono::milliseconds(ms));
+}
 
 /******************************************************************************/
 /* WALL                                                                       */
