@@ -258,7 +258,7 @@ template<typename T, size_t N> struct array;
 template<typename T, size_t N>
 std::string to_string(const std::array<T, N>& a)
 {
-    return lockless::toString(begin(a), begin(a));
+    return lockless::toString(begin(a), end(a));
 }
 
 } // namespace std
