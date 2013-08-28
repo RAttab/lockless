@@ -50,7 +50,7 @@ struct UnfairLock : public Lock
     bool tryLock()
     {
         size_t oldVal = val;
-        return !oldVal && val.compare_exchange_weak(oldVal, 1);
+        return !oldVal && val.compare_exchange_strong(oldVal, 1);
     }
 
     void unlock() { val.store(0); }
@@ -64,48 +64,68 @@ private:
 /* FAIR LOCK                                                                  */
 /******************************************************************************/
 
+/**
+   The reason why we use atomic functions instead of AtomicPod or std::atomic is
+   because tryLock needs to make a copy of our array
+
+ */
 struct FairLock : public Lock
 {
-    typedef uint32_t Word;
-    locklessEnum unsigned ServingShift = 0;
-    locklessEnum unsigned TicketsShift = 16;
-
-    locklessEnum Word OneServing = Word(1) << ServingShift;
-    locklessEnum Word OneTicket = Word(1) << TicketsShift;
-
-    FairLock() : data(0) {}
-
-    void lock()
+    FairLock()
     {
-        Word value = data.fetch_add(OneTicket);
-        Word ticket = tickets(value);
-        while (ticket != serving(data));
+        d.packed = 0;
     }
 
-    bool tryLock()
+    void lock() locklessNeverInline
     {
-        Word old = data;
+        uint32_t tickets = d.split.tickets.fetch_add(1);
+        while (tickets != d.split.serving);
+    }
+
+    bool tryLock() locklessNeverInline
+    {
+        uint64_t val;
+        uint64_t old = d.packed;
 
         do {
-            if (serving(old) != tickets(old)) return false;
-        } while (!data.compare_exchange_weak(old, old + OneTicket));
+            // The elaborate setup is to gracefully wrap on overflow.
+            uint32_t tickets = old >> 32;
+            uint32_t serving = old;
+
+            if (tickets != serving) return false;
+
+            tickets++;
+            val = (uint64_t(tickets) << 32) | serving;
+
+        } while (!d.packed.compare_exchange_weak(old, val));
 
         return true;
     }
 
-    void unlock()
+    void unlock() locklessNeverInline
     {
-        data += OneServing;
+        // we have the exclusive lock so we're the only one that can modify
+        // serving which means that we don't need the atomic inc.
+        d.split.serving = d.split.serving + 1;
     }
 
 private:
 
-    Word serving(Word d) const { return (d >> ServingShift) & Word(0xFFFF); }
-    Word tickets(Word d) const { return (d >> TicketsShift) & Word(0xFFFF); }
+    /** This struct allows us to work on both the split values and the whole in
+        an atomic fashion while also gracefully handling overflows.
+     */
+    union
+    {
+        struct
+        {
+            std::atomic<uint32_t> serving;
+            std::atomic<uint32_t> tickets;
+        } split;
 
-    std::atomic<Word> data;
+        std::atomic<uint64_t> packed;
+
+    } d;
 };
-
 
 /******************************************************************************/
 /* LOCK GUARD                                                                 */
@@ -158,7 +178,6 @@ struct TryLockGuard
     {
         if (!pLock) return;
         if (locked) pLock->unlock();
-        pLock->unlock();
         pLock = nullptr;
         locked = false;
     }
