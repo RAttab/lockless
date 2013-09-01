@@ -3,7 +3,13 @@
    FreeBSD-style copyright and disclaimer apply
 
    Arena allocator
-*/
+
+   \todo For this to have any chance against tcmalloc we need to make it
+   thread-local. This has unfortunate problem that we need an instanced TLS
+   which is all kinds of tricky to get right and probably blow our entire time
+   budget.
+
+ */
 
 #ifndef __lockless__arena_h__
 #define __lockless__arena_h__
