@@ -24,77 +24,92 @@ namespace lockless {
  */
 struct FairRWLock : public Lock
 {
-    typedef uint32_t Word;
+    locklessEnum uint64_t Mask = 0xFFFF;
 
-    locklessEnum unsigned ReadsShift   = 0;
-    locklessEnum unsigned WritesShift  = 8;
-    locklessEnum unsigned TicketsShift = 16;
-
-    locklessEnum Word OneRead   = Word(1) << ReadsShift;
-    locklessEnum Word OneWrite  = Word(1) << WritesShift;
-    locklessEnum Word OneTicket = Word(1) << TicketsShift;
-
-
-    FairRWLock() : data (0) {}
+    FairRWLock() { d.all = 0; }
 
     void lock()
     {
-        Word value = data.fetch_add(OneTicket);
-        Word ticket = tickets(value);
-        while (ticket != writes(data));
+        uint16_t ticket = d.split.tickets.fetch_add(1);
+        while (ticket != d.split.writes);
     }
 
     bool tryLock()
     {
-        Word old = data;
+        uint64_t val;
+        uint64_t old = d.all;
 
         do {
-            if (writes(old) != tickets(old)) return false;
-        } while (!data.compare_exchange_weak(old, old + OneTicket));
+            uint16_t writes = old >> 16;
+            uint16_t tickets = old >> 32;
+            if (writes != tickets) return false;
+
+            tickets++;
+            val = (old & ~(Mask << 32)) | (uint64_t(tickets) << 32);
+
+        } while (!d.all.compare_exchange_weak(old, val));
 
         return true;
     }
 
     void unlock()
     {
-        // \todo Not sure if atomic inc is faster then load/store.
-        data = data + OneReads + OneWrites;
+        /* This function is implemented this way to avoid an atomic increment
+           and go for a simple load store operation instead.
+         */
+
+        uint16_t reads = uint16_t(d.split.reads) + 1;
+        uint16_t writes = uint16_t(d.split.writes) + 1;
+
+        // Note that tickets can still be modified so we can't update d.all.
+        d.rw = uint32_t(reads) | uint32_t(writes) << 16;
     }
 
     void readLock()
     {
-        auto value = data.fetch_add(OneTicket);
-        auto ticket = tickets(value);
-        while (ticket != reads(data));
+        uint16_t ticket = d.split.tickets.fetch_add(1);
+        while (ticket != d.split.reads);
 
-        // Unlock the next read to go through.
-        data += OneRead;
+        // Since we've entered a read section, allow other reads to continue.
+        d.split.reads++;
     }
 
-    void tryReadLock()
+    bool tryReadLock()
     {
-        Word old = data;
+        uint64_t val;
+        uint64_t old = d.all;
 
         do {
-            if (reads(old) != tickets(old)) return false;
-        } while (!data.compare_exchange_weak(old, old + OneRead + OneTicket));
+            uint16_t reads = old;
+            uint16_t tickets = old >> 32;
+
+            if (reads != tickets) return false;
+
+            reads++;
+            tickets++;
+            val = (old & ~(Mask << 16)) | uint64_t(tickets) << 32 | reads;
+        } while (d.all.compare_exchange_weak(old, val));
 
         return true;
     }
 
     void readUnlock()
     {
-        data += OneWrite;
+        d.split.writes++;
     }
 
 private:
-    Word reads(Word d) const { return (d >> ReadsShift) & Word(0xFF); }
-    Word writes(Word d) const { return (d >> WritesShift) & Word(0xFF); }
-    Word tickets(Word d) const { return (d >> TicketsShift) & Word(0xFF); }
 
-    std::atomic<Word> data;
+    union {
+        struct {
+            std::atomic<uint16_t> reads;
+            std::atomic<uint16_t> writes;
+            std::atomic<uint16_t> tickets;
+        } split;
+        std::atomic<uint32_t> rw;
+        std::atomic<uint64_t> all;
+    } d;
 };
-
 
 /******************************************************************************/
 /* READ GUARD                                                                 */
@@ -146,7 +161,6 @@ struct TryReadGuard
     {
         if (!pLock) return;
         if (locked) pLock->readUnlock();
-        pLock->unlock();
         pLock = nullptr;
         locked = false;
     }
