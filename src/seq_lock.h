@@ -54,11 +54,19 @@ struct SeqLock : public Lock
         seq = seq + 1;
     }
 
+    bool tryLock()
+    {
+        if (!writeLock.tryLock()) return false;
+
+        seq = seq + 1;
+        return true;
+    }
+
     void unlock()
     {
         // Since we're still holding the lock, we don't need an atomic inc.
         // We do need the atomic store with the associated barriers though.
-        seq = seq - 1;
+        seq = seq + 1;
 
         writeLock.unlock();
     }
@@ -95,8 +103,8 @@ private:
 /* READ                                                                       */
 /******************************************************************************/
 
-template<typename Fn>
-void read(SeqLock& lock, const Fn& fn)
+template<typename Lock, typename Fn>
+void read(Lock& lock, const Fn& fn)
 {
     size_t seq;
     do {
@@ -106,8 +114,8 @@ void read(SeqLock& lock, const Fn& fn)
 }
 
 // The Ret template param must be specified
-template<typename Ret, typename Fn>
-Ret readRet(SeqLock& lock, const Fn& fn)
+template<typename Ret, typename Lock, typename Fn>
+Ret readRet(Lock& lock, const Fn& fn)
 {
     size_t seq;
     Ret ret;
