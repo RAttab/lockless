@@ -31,14 +31,14 @@ struct Rcu : public Lock
 
     Rcu() : current(0)
     {
-        epochs[0].init();
-        epochs[1].init();
+        for (size_t i = 0; i < 2; ++i)
+            epochs[0].init();
     }
 
     ~Rcu()
     {
-        doDeferred(epochs[0].deferList.head.exchange(nullptr));
-        doDeferred(epochs[1].deferList.head.exchange(nullptr));
+        for (size_t i = 0; i < 2; ++i)
+            doDeferred(epochs[i].deferList.head.exchange(nullptr));
     }
 
     size_t enter()
@@ -96,8 +96,8 @@ struct Rcu : public Lock
 
 
         /* Note that we can't execute any defered work if we're in current
-           because other may not have been fully vacated yet which that the
-           read-side critical section is still live.
+           because other may not have been fully vacated yet which means that
+           the read-side critical section is still live.
 
            Note that we can't decrement the counter before we write the head of
            the list because otherwise it could be swapped from under our nose.
