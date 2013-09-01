@@ -51,19 +51,29 @@ size_t doDeferThread(Context<Rcu>& ctx, unsigned)
 /******************************************************************************/
 
 template<typename Rcu>
-void runTest(
-        unsigned thCount,
-        size_t lengthMs,
-        const array<string, 2>& titles)
+void runEnterExitTest(unsigned thCount, size_t lengthMs, const string& name)
 {
-    PerfTest< Context<Rcu> > perf;
-    perf.add("epochs", doEnterExitThread<Rcu>, thCount);
-    perf.add("defer", doDeferThread<Rcu>, thCount);
+    typedef Context<Rcu> Ctx;
 
+    PerfTest<Ctx> perf;
+    perf.add("epochs", doEnterExitThread<Rcu>, thCount);
     perf.run(lengthMs);
 
-    cerr << perf.stats("epochs").print(titles[0]) << endl;
-    cerr << perf.stats("defer").print(titles[1]) << endl;
+    cerr << perf.stats("epochs").print("epochs-" + name) << endl;
+}
+
+
+template<typename Rcu>
+void runDeferTest(unsigned thCount, size_t lengthMs, const string& name)
+{
+    typedef Context<Rcu> Ctx;
+
+    PerfTest<Ctx> perf;
+    perf.add("epochs", doEnterExitThread<Rcu>, thCount);
+    perf.add("defer", doDeferThread<Rcu>, thCount);
+    perf.run(lengthMs);
+
+    cerr << perf.stats("defer").print("defer-" + name) << endl;
 }
 
 int main(int argc, char** argv)
@@ -71,15 +81,20 @@ int main(int argc, char** argv)
     unsigned thCount = 4;
     if (argc > 1) thCount = stoul(string(argv[1]));
 
-    size_t lengthMs = 2000;
+    size_t lengthMs = 1000;
     if (argc > 2) lengthMs = stoull(string(argv[2]));
 
-    runTest<Rcu>(thCount, lengthMs, {{ "rcu-epochs", "rcu-defer" }});
+    runEnterExitTest<Rcu>(thCount, lengthMs, "rcu");
     {
         GcThread gcThread;
-        runTest<GlobalRcu>(thCount, lengthMs, {{ "grcu-epochs", "grcu-defer" }});
+        runEnterExitTest<GlobalRcu>(thCount, lengthMs, "grcu");
     }
 
+    runDeferTest<Rcu>(thCount, lengthMs, "rcu");
+    {
+        GcThread gcThread;
+        runDeferTest<GlobalRcu>(thCount, lengthMs, "grcu");
+    }
 
     return 0;
 }
