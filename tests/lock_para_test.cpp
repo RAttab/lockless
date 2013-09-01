@@ -39,27 +39,6 @@ void testMutex(const std::string& title)
 
     Lock lock;
 
-    // Extremely simple single threaded sanity checks
-    {
-        lock.lock();
-        locklessCheck(!lock.tryLock(), NullLog);
-        lock.unlock();
-        locklessCheck(lock.tryLock(), NullLog);
-        lock.unlock();
-
-        {
-            LockGuard<Lock> guard(lock);
-
-            TryLockGuard<Lock> tryGuard(lock);
-            locklessCheck(!tryGuard, NullLog);
-        }
-
-        {
-            TryLockGuard<Lock> tryGuard(lock);
-            locklessCheck(tryGuard, NullLog);
-        }
-    }
-
     std::array<uint64_t, 10> values;
     values.fill(0);
 
@@ -100,6 +79,7 @@ BOOST_AUTO_TEST_CASE(mutexTest)
     testMutex<UnfairLock>("UnfairLock");
     testMutex<FairLock>("FairLock");
     testMutex<FairRWLock>("FairRWLock");
+    testMutex< SeqLock<UnfairLock> >("SeqLock");
 }
 
 
