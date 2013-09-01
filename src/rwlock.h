@@ -87,8 +87,8 @@ struct FairRWLock : public Lock
 
             reads++;
             tickets++;
-            val = (old & ~(Mask << 16)) | uint64_t(tickets) << 32 | reads;
-        } while (d.all.compare_exchange_weak(old, val));
+            val = (old & (Mask << 16)) | uint64_t(tickets) << 32 | reads;
+        } while (!d.all.compare_exchange_weak(old, val));
 
         return true;
     }
