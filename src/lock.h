@@ -76,13 +76,13 @@ struct FairLock : public Lock
         d.packed = 0;
     }
 
-    void lock() locklessNeverInline
+    void lock()
     {
         uint32_t tickets = d.split.tickets.fetch_add(1);
         while (tickets != d.split.serving);
     }
 
-    bool tryLock() locklessNeverInline
+    bool tryLock()
     {
         uint64_t val;
         uint64_t old = d.packed;
@@ -102,7 +102,7 @@ struct FairLock : public Lock
         return true;
     }
 
-    void unlock() locklessNeverInline
+    void unlock()
     {
         // we have the exclusive lock so we're the only one that can modify
         // serving which means that we don't need the atomic inc.
