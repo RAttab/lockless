@@ -31,11 +31,12 @@
 #ifndef __lockless__snzi_h__
 #define __lockless__snzi_h__
 
-#include <atomic>
-
-#include "log.h"
 #include "utils.h"
-#include "debug.h"
+#include "log.h"
+#include "check.h"
+#include "arch.h"
+
+#include <atomic>
 
 namespace lockless {
 
@@ -47,10 +48,14 @@ namespace lockless {
 template<size_t Nodes, size_t Arity = 2>
 struct Snzi
 {
-    lockessStatiAssert(Nodes > 0);
+    locklessStaticAssert(Nodes > 0);
     locklessStaticAssert(Arity > 1);
 
-    Snzi() { tree.fill(0); }
+    Snzi()
+    {
+        for (size_t i = 0; i < tree.size(); ++i)
+            tree[i].store(0);
+    }
 
     bool test() const { return tree[0].load(); }
 
@@ -84,7 +89,7 @@ private:
                 value = 1;
             }
 
-            locklessCheckEq(value, 1, log);
+            locklessCheckEq(value, size_t(1), log);
 
             bool shifted = inc(parent);
 
@@ -103,7 +108,7 @@ private:
         size_t parent = node / Arity;
 
         while (true) {
-            locklessCheckGe(value, 2, log);
+            locklessCheckGe(value, size_t(2), log);
 
             if (value > 2) {
                 if (!tree[node].compare_exchange_weak(value, value - 1))
@@ -120,9 +125,14 @@ private:
         return false;
     }
 
+    /* Pad ensures one value per cache line. We can't use alignas or the gcc
+       attribute because they don't play well with templats.
+     */
+    typedef Pad<std::atomic<size_t>, CacheLine> Counter;
+    locklessStaticAssert((CheckPad<std::atomic<size_t>, CacheLine>::value));
 
-    typedef alignas(CacheLine) std::atomic<size_t> Counter;
     std::array<Counter, Nodes> tree;
+
 
 public:
     DebuggingLog<1024, DebugSnzi>::type log;
@@ -133,7 +143,7 @@ public:
 /* NULL SNZI                                                                  */
 /******************************************************************************/
 
-template<typename Arity = 1>
+template<size_t Arity>
 struct Snzi<1, Arity>
 {
     Snzi() : counter(0) {}
@@ -144,14 +154,14 @@ struct Snzi<1, Arity>
     bool inc() { return counter.fetch_add(1) == 0; }
 
     /** Returns true if the state changed from 1 to 0. */
-    bool dec() { return counter.fetch_dec(1) == 1; }
+    bool dec() { return counter.fetch_sub(1) == 1; }
 
 private:
 
     std::atomic<size_t> counter;
 
 public:
-    NullLog log;
+    Log<0> log;
 };
 
 typedef Snzi<1,1> NullSnzi;

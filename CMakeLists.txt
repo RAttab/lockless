@@ -89,6 +89,8 @@ lockless_test(tls_perf)
 lockless_test(list)
 lockless_test(list_para)
 
+lockless_test(snzi)
+
 lockless_test(grcu)
 lockless_test(grcu_para)
 
