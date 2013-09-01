@@ -103,12 +103,13 @@ lockless_test(queue_perf)
 lockless_test(map)
 lockless_test(map_para)
 
+lockless_test(arena)
+lockless_test(arena_para)
+
 lockless_test(alloc)
 lockless_test(alloc_para)
 lockless_test(alloc_perf)
 
-lockless_test(arena)
-lockless_test(arena_para)
-
 lockless_test(lock)
 lockless_test(lock_para)
+lockless_test(lock_perf)
