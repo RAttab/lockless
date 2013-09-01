@@ -53,6 +53,13 @@ std::string fmtValue(double value)
     return format("%6.2f%c", value, scaleIndicators[i]);
 }
 
+std::string fmtRatio(double num, double denom)
+{
+    double value = (num / denom) * 100;
+    return format("%6.2f%%", value);
+}
+
+
 std::string fmtTitle(const std::string& title, char fill = '-')
 {
     std::string filler(80 - title.size() - 4, fill);
