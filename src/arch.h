@@ -20,7 +20,7 @@
 #define locklessAlwaysInline __attribute__((always_inline))
 #define locklessNeverInline  __attribute__((noinline))
 #define locklessNonNull      __attribute__((nonnull))
-#define locklessNoReturn     __attribute__(noreturn))
+#define locklessNoReturn     __attribute__((noreturn))
 #define locklessPure         __attribute__((pure))
 #define locklessPrintf(x,y)  __attribute__((format(printf, x, y)))
 #define locklessMalloc       __attribute__((malloc))
