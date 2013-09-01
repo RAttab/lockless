@@ -59,6 +59,9 @@ struct Wall
     for CPU migration of the current thread or for the power-state of the CPU.
     Both of these issues can lead to skewed results.
 
+    To figure out whether this represent time or cycles, check for the
+    constant_tsc flag in /proc/cpuinfo.
+
     \todo CPU cycles only seem to be available through performance counters
     which is CPU specific and require a kernel driver to enable in userland.
     Bummer.
