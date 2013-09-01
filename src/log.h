@@ -8,6 +8,7 @@
 #ifndef __lockless__log_h__
 #define __lockless__log_h__
 
+#include "tls.h"
 #include "clock.h"
 #include "utils.h"
 
@@ -28,9 +29,6 @@ namespace details {
 
 // Generates a unique tick for each log message.
 extern Clock<size_t> GlobalLogClock;
-
-/* Returns a unique identifier for the current thread. */
-size_t threadId();
 
 } // namespace details
 
@@ -118,7 +116,7 @@ struct Log
     {
         LogEntry* entry = new LogEntry(
                 type, tick,
-                details::threadId(),
+                threadId(),
                 std::forward<Title>(title),
                 std::forward<Msg>(msg));
 

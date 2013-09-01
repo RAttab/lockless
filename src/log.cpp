@@ -7,7 +7,6 @@
 */
 
 #include "log.h"
-#include "tls.h"
 
 using namespace std;
 
@@ -19,31 +18,6 @@ namespace lockless {
 /******************************************************************************/
 
 namespace details { Clock<size_t> GlobalLogClock; }
-
-
-/******************************************************************************/
-/* THREAD ID                                                                  */
-/******************************************************************************/
-
-namespace details {
-
-namespace {
-
-atomic<size_t> GlobalThreadCounter{1};
-
-locklessTls size_t LocalThreadId{0};
-
-} // namespace anonymous
-
-
-size_t threadId()
-{
-    if (!LocalThreadId)
-        LocalThreadId = GlobalThreadCounter.fetch_add(1);
-    return LocalThreadId;
-}
-
-} // namespace details
 
 
 /******************************************************************************/

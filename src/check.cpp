@@ -5,13 +5,13 @@
    Description
 */
 
-#include <linux/futex.h>
+#include "tls.h"
+#include "check.h"
+
 #include <signal.h>
 #include <errno.h>
 #include <cassert>
 #include <cstring>
-
-#include "check.h"
 
 using namespace std;
 
@@ -45,8 +45,7 @@ void signalAction(int sig, siginfo_t* info, void* ctx)
     sigconfig.lock.lock();
 
     sigconfig.callback();
-    fprintf(stderr, "\nSIGSEGV {%2ld}: addr=%p\n",
-            details::threadId(), info->si_addr);
+    fprintf(stderr, "\nSIGSEGV {%2ld}: addr=%p\n", threadId(), info->si_addr);
 
     if (sigconfig.oldact.sa_sigaction)
         sigconfig.oldact.sa_sigaction(sig, info, ctx);

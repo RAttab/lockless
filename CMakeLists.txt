@@ -63,7 +63,7 @@ install(
 add_library(
     lockless
     SHARED
-    src/log.cpp src/check.cpp src/alloc.cpp
+    src/tls.cpp src/log.cpp src/check.cpp src/alloc.cpp
     src/grcu.cpp)
 
 install(TARGETS lockless DESTINATION lib)
