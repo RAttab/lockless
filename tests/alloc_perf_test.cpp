@@ -147,7 +147,7 @@ void runRingBufferTest(unsigned thCount, unsigned lengthMs)
     perf.add(Value::name, doRingBufferThread<Value, RingSize>, thCount);
     perf.run(lengthMs);
 
-    cerr << perf.stats(Value::name).print(Value::name) << endl;
+    cerr << perf.printStats(Value::name) << endl;
 }
 
 int main(int argc, char** argv)

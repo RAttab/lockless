@@ -120,17 +120,17 @@ int main(int argc, char** argv)
     PerfTest<unsigned> tlsPerf;
     tlsPerf.add("tls", doTlsThread, thCount);
     tlsPerf.run(lengthMs);
-    cerr << tlsPerf.stats("tls").print("tls") << endl;
+    cerr << tlsPerf.printStats("tls") << endl;
 
     PerfTest<unsigned> gccPerf;
     gccPerf.add("gcc", doGccThread, thCount);
     gccPerf.run(lengthMs);
-    cerr << gccPerf.stats("gcc").print("gcc") << endl;
+    cerr << gccPerf.printStats("gcc") << endl;
 
     PerfTest<PthreadContext> pthreadPerf;
     pthreadPerf.add("pthread", doPthreadThread, thCount);
     pthreadPerf.run(lengthMs);
-    cerr << pthreadPerf.stats("pthread").print("pthread") << endl;
+    cerr << pthreadPerf.printStats("pthread") << endl;
 
     return 0;
 

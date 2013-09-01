@@ -186,6 +186,10 @@ struct PerfTest
         return stats;
     }
 
+    std::string printStats(const std::string& name)
+    {
+        return stats(name).print(name);
+    }
 
     void run(size_t lengthMs, size_t warmupMs = 0.0)
     {

@@ -54,9 +54,8 @@ int main(int argc, char** argv)
 
     perf.run(lengthMs);
 
-    array<string, 2> titles {{ "push", "pop" }};
-    for (const string& title : titles)
-        cerr << perf.stats(title).print(title) << endl;
+    cerr << perf.printStats("push") << endl;
+    cerr << perf.printStats("pop") << endl;
 
     return 0;
 
