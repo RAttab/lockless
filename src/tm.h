@@ -10,6 +10,8 @@
 #ifndef __lockless__time_h__
 #define __lockless__time_h__
 
+#include "arch.h"
+
 #include <chrono>
 #include <thread>
 #include <cstdlib>
