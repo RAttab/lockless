@@ -50,10 +50,7 @@ struct Snzi
     lockessStatiAssert(Nodes > 0);
     locklessStaticAssert(Arity > 1);
 
-    Snzi()
-    {
-        for (auto& node : tree) node.store(0);
-    }
+    Snzi() { tree.fill(0); }
 
     bool test() const { return tree[0].load(); }
 
