@@ -114,7 +114,7 @@ int main(int argc, char** argv)
     unsigned thCount = 8;
     if (argc > 1) thCount = stoul(string(argv[1]));
 
-    size_t lengthMs = 5000;
+    size_t lengthMs = 1000;
     if (argc > 2) lengthMs = stoull(string(argv[2]));
 
     PerfTest<unsigned> tlsPerf;
