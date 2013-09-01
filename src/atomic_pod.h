@@ -85,7 +85,7 @@ struct AtomicPod
 #define LOCKLESS_ATOMIC_POD_UNARY_OP(op,name)                           \
     T operator op ()                                                    \
     {                                                                   \
-        return __atomic_fetch_ ## name (&value, 1, AtomicSeqCst);       \
+        return __atomic_ ## name ## _fetch (&value, 1, AtomicSeqCst);   \
     }                                                                   \
     T operator op (int)                                                 \
     {                                                                   \
