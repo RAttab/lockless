@@ -8,9 +8,10 @@ amusing/frustrating me. Current doodads worthy of notice:
   without having to worry about performance side-effects.
 
 - Check: Assertion library that meshes with Log to dump detailed historical
-  information to aid debugging. Note that the Check and Log combo form a
-  surprisingly effective debugging combo for lock-free algorithm which is why
-  you'll see most classes in this library present a log object in its interface.
+  information to aid debugging. Note that the Check and Log combo is
+  surprisingly effective for debugging lock-free algorithms and data-structures
+  which is why you'll see most classes in this library present a log object in
+  its interface.
 
 - Rcu: Light implementation that uses no static members or extra
   threads. Currently, this version doesn't scale too well and I'm hoping to use
