@@ -4,11 +4,8 @@
 
    Lock-free ring queue.
 
-   Note that you can pick and choose the pop and push functions from RingSRSW
-   and RingMRMW to get RingSRMW and RingMRSR.
-
-   \todo The name is kinda bad as it could also be a ring buffer where we
-   overwrite a value when the ring is full.
+   Note that you can pick and choose the pop and push functions from
+   RingQueueSRSW and RingQueueMRMW to get RingQueueSRMW and RingQueueMRSR.
 
    \todo Could probably juice out extra performance by splitting the read and
    write cursors on different cache lines but we would lose our ability to have
@@ -86,6 +83,13 @@ struct RingBase
 
 protected:
 
+    void inc(std::atomic<uint32_t>& cursor, uint32_t& pos)
+    {
+        if (cursor == pos)
+            cursor.compare_exchange_strong(pos, pos + 1);
+        else pos = cursor;
+    }
+
     std::array<std::atomic<T>, Size> ring;
     union {
         struct {
@@ -101,11 +105,11 @@ protected:
 
 
 /******************************************************************************/
-/* RING SRSW                                                                  */
+/* RING QUEUE SRMW                                                            */
 /******************************************************************************/
 
 template<typename T, size_t Size>
-struct RingSRSW : public details::RingBase<T, Size>
+struct RingQueueSRSW : public details::RingBase<T, Size>
 {
     using details::RingBase<T, Size>::d;
     using details::RingBase<T, Size>::ring;
@@ -141,11 +145,11 @@ struct RingSRSW : public details::RingBase<T, Size>
 
 
 /******************************************************************************/
-/* RING MRMW                                                                  */
+/* RING QUEUE MRMW                                                            */
 /******************************************************************************/
 
 template<typename T, size_t Size>
-struct RingMRMW : public details::RingBase<T, Size>
+struct RingQueueMRMW : public details::RingBase<T, Size>
 {
     using details::RingBase<T, Size>::d;
     using details::RingBase<T, Size>::ring;
@@ -156,45 +160,107 @@ struct RingMRMW : public details::RingBase<T, Size>
         // slot is empty.
         locklessCheck(obj, NullLog);
 
+        bool done = false;
         uint32_t pos = d.split.write;
 
-        while (true) {
-            T old = ring[pos % Size];
-
-            if (!old && ring[pos % Size].compare_exchange_strong(old, obj)) {
-                if (d.split.write == pos)
-                    d.split.write.compare_exchange_strong(pos, pos + 1);
-                return true;
-            }
-
+        while (!done) {
             if (pos - d.split.read == Size) return false;
 
-            if (d.split.write == pos)
-                d.split.write.compare_exchange_strong(pos, pos + 1);
+            T old = ring[pos % Size];
+            done = !old && ring[pos % Size].compare_exchange_strong(old, obj);
+
+            this->inc(d.split.write, pos);
         }
+
+        return true;
     }
 
     T pop()
     {
+        T old;
+        bool done = false;
         uint32_t pos = d.split.read;
 
-        while (true) {
-            T old = ring[pos % Size];
-
-            if (old && ring[pos % Size].compare_exchange_strong(old, T(0))) {
-                if (d.split.read == pos)
-                    d.split.read.compare_exchange_strong(pos, pos + 1);
-                return old;
-            }
-
+        while (!done) {
             if (pos == d.split.write) return T(0);
 
-            if (d.split.read == pos)
-                d.split.read.compare_exchange_strong(pos, pos + 1);
+            old = ring[pos % Size];
+            done = old && ring[pos % Size].compare_exchange_strong(old, T(0));
+
+            this->inc(d.split.read, pos);
         }
+
+        return old;
     }
 
 };
+
+
+/******************************************************************************/
+/* RING BUFFER                                                                */
+/******************************************************************************/
+
+/** Same as a ring queue except that that push can never fail. If the ring
+    happens to be full then the tail of the queue is popped and discarded.
+
+    \todo would be nice if overwritting the tail didn't require an actual pop
+    op. Unfortunately, it's kind of required to ensure that it isn't read while
+    we're writting a new head.
+
+ */
+template<typename T, size_t Size>
+struct RingBuffer : public details::RingBase<T, Size>
+{
+    using details::RingBase<T, Size>::d;
+    using details::RingBase<T, Size>::ring;
+
+    void push(T obj)
+    {
+        // Null is a reserved value used by the algorithm to indicate that a
+        // slot is empty.
+        locklessCheck(obj, NullLog);
+
+        bool done = false;
+        uint32_t wpos = d.split.write;
+
+        while (!done) {
+            // We're about to overwrite this value so make sure it can't be read
+            uint32_t rpos = d.split.read;
+            if (wpos - rpos == Size) pop(rpos);
+
+            T old = ring[wpos % Size];
+            done = !old && ring[wpos % Size].compare_exchange_strong(old, obj);
+
+            this->inc(d.split.write, wpos);
+        }
+    }
+
+    // Same implementation as RingQueueMRMW just split up a bit.
+    T pop()
+    {
+        T old(0);
+        uint32_t pos = d.split.read;
+
+        do {
+            if (pos == d.split.write) return T(0);
+        } while(!(old = pop(pos)));
+
+        return old;
+    }
+
+private:
+
+    T pop(uint32_t& pos)
+    {
+        T old = ring[pos % Size];
+        bool done = old && ring[pos % Size].compare_exchange_strong(old, T(0));
+
+        this->inc(d.split.read, pos);
+        return done ? old : T(0);
+    }
+
+};
+
 
 
 } // lockless

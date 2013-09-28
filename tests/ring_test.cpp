@@ -10,6 +10,7 @@
 
 #define LOCKLESS_CHECK_ABORT 1
 
+#include <iostream>
 
 #include "ring.h"
 #include "check.h"
@@ -38,17 +39,17 @@ BOOST_AUTO_TEST_CASE(compile)
 {
     cerr << fmtTitle("compile", '=') << endl;
 
-    testCompile< size_t, RingSRSW<size_t, 8> >(1);
-    testCompile< size_t, RingMRMW<size_t, 8> >(1);
+    testCompile< size_t, RingQueueSRSW<size_t, 8> >(1);
+    testCompile< size_t, RingQueueMRMW<size_t, 8> >(1);
 
     size_t value = 0;
-    testCompile< size_t*, RingSRSW<size_t*, 8> >(&value);
-    testCompile< size_t*, RingMRMW<size_t*, 8> >(&value);
+    testCompile< size_t*, RingQueueSRSW<size_t*, 8> >(&value);
+    testCompile< size_t*, RingQueueMRMW<size_t*, 8> >(&value);
 }
 
 
 template<typename Ring>
-void testSeq(const std::string& title)
+void testQueue(const std::string& title)
 {
     cerr << fmtTitle(title + " - " + to_string(Ring::Size), '=') << endl;
 
@@ -95,11 +96,78 @@ void testSeq(const std::string& title)
     }
 }
 
-BOOST_AUTO_TEST_CASE(seq)
+BOOST_AUTO_TEST_CASE(queue)
 {
-    testSeq< RingSRSW<size_t, 1> >("srsw");
-    testSeq< RingSRSW<size_t, 8> >("srsw");
+    testQueue< RingQueueSRSW<size_t, 1> >("srsw");
+    testQueue< RingQueueSRSW<size_t, 8> >("srsw");
 
-    testSeq< RingMRMW<size_t, 1> >("mrmw");
-    testSeq< RingMRMW<size_t, 8> >("mrmw");
+    testQueue< RingQueueMRMW<size_t, 1> >("mrmw");
+    testQueue< RingQueueMRMW<size_t, 8> >("mrmw");
+}
+
+template<size_t Size>
+void testBuffer()
+{
+    typedef RingBuffer<size_t, Size> Ring;
+    cerr << fmtTitle("buffer - " + to_string(Ring::Size), '=') << endl;
+
+    Ring ring;
+    auto& log = NullLog;
+
+    auto checkSize = [&] (size_t size) {
+        locklessCheckEq(ring.size(), size, log);
+        locklessCheckEq(ring.empty(), size == size_t(0), log);
+    };
+
+    for (size_t it = 0; it < 3; ++it) {
+        cerr << fmtTitle(to_string(it)) << endl;
+
+        checkSize(0);
+        locklessCheck(!ring.pop(), log);
+
+        for (size_t i = 0; i < Ring::Size * 2; ++i) {
+            size_t value = i + 1;
+
+            ring.push(value);
+            checkSize(1);
+
+            locklessCheckEq(ring.pop(), value, log);
+            checkSize(0);
+
+            locklessCheckEq(ring.pop(), size_t(0), log);
+            checkSize(0);
+        }
+
+
+        for (size_t i = 0; i < Ring::Size; ++i) {
+            ring.push(i + 1);
+            checkSize(i + 1);
+        }
+
+        for (size_t i = 0; i < Ring::Size; ++i) {
+            locklessCheckEq(ring.pop(), i + 1, log);
+            checkSize(Ring::Size - i - 1);
+        }
+
+        locklessCheck(!ring.pop(), log);
+
+
+        for (size_t i = 0; i < Ring::Size * 2; ++i) {
+            ring.push(i + 1);
+            checkSize(i >= Ring::Size ? Ring::Size : i + 1);
+        }
+
+        for (size_t i = 0; i < Ring::Size; ++i) {
+            locklessCheckEq(ring.pop(), Ring::Size + i + 1, log);
+            checkSize(Ring::Size - i - 1);
+        }
+
+        locklessCheck(!ring.pop(), log);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(buffer)
+{
+    testBuffer<1>();
+    testBuffer<8>();
 }
