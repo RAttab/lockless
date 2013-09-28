@@ -13,67 +13,67 @@
 #ifndef __lockless__ring_h__
 #define __lockless__ring_h__
 
+#include "check.h"
+
 #include <array>
 #include <atomic>
 
+
 namespace lockless {
 
+
 /******************************************************************************/
-/* RING SRSW                                                                  */
+/* RING BASE                                                                  */
 /******************************************************************************/
 
-template<typename T, size_t Size>
-struct RingSRSW
+template<typename T, size_t Size_>
+struct RingBase
 {
-    RingSRSW() : all(0) { ring.fill(nullptr); }
+    RingBase()
+    {
+        d.all = 0;
+        for (auto& val : ring) val = T(0);
+    }
+
+    locklessEnum size_t Size = Size_;
+    locklessStaticAssert(Size > 0);
+    locklessStaticAssert(Size < (uint32_t(0) - 1));
 
     constexpr size_t capacity() const { return Size; }
 
     size_t size() const
     {
         uint64_t all = d.all;
-        uint32_t begin = all;
-        uint32_t end = all >> 32;
+        uint32_t rpos = all;
+        uint32_t wpos = all >> 32;
 
-        if (begin <= end)
-            return begin - end;
-        return Size - begin + end;
+        if (rpos <= wpos)
+            return wpos - rpos;
+        return Size - rpos + wpos;
     }
 
     bool empty() const
     {
         uint64_t all = d.all;
-        uint32_t begin = all;
-        uint32_t end = all >> 32;
+        uint32_t rpos = all;
+        uint32_t wpos = all >> 32;
 
-        return begin == end;
+        return rpos == wpos;
     }
 
-    bool push(T* obj)
+    std::string dump() const
     {
-        uint32_t pos = d.split.read;
-
-        if (ring[pos]) return false;
-        ring[pos] = obj;
-
-        d.split.read++;
-        return true;
+        std::stringstream ss;
+        ss << format("{ w=%x, r=%x, [ ", d.split.write, d.split.read);
+        for (size_t i = 0; i < Size; ++i)
+            ss << format("%lld:%p ", i, ring[i]);
+        ss << "] }";
+        return ss.str();
     }
 
-    T* pop()
-    {
-        uint32_t pos = d.split.write;
+protected:
 
-        T* value = ring[pos];
-        if (!value) return nullptr;
-        ring[pos] = nullptr;
-
-        d.split.write++;
-        return value;
-    }
-
-private:
-    std::array<std::atomic<T*>, Size> ring;
+    std::array<std::atomic<T>, Size> ring;
     union {
         struct {
             std::atomic<uint32_t> read;
@@ -81,6 +81,46 @@ private:
         } split;
         std::atomic<uint64_t> all;
     } d;
+
+};
+
+
+
+/******************************************************************************/
+/* RING SRSW                                                                  */
+/******************************************************************************/
+
+template<typename T, size_t Size>
+struct RingSRSW : public RingBase<T, Size>
+{
+    using RingBase<T, Size>::d;
+    using RingBase<T, Size>::ring;
+
+    bool push(T obj)
+    {
+        locklessCheck(obj, NullLog);
+
+        uint32_t pos = d.split.write;
+
+        if (ring[pos]) return false;
+        ring[pos] = obj;
+
+        d.split.write++;
+        return true;
+    }
+
+    T pop()
+    {
+        uint32_t pos = d.split.read;
+
+        T value = ring[pos];
+        if (!value) return T(0);
+        ring[pos] = T(0);
+
+        d.split.read++;
+        return value;
+    }
+
 };
 
 
@@ -89,40 +129,21 @@ private:
 /******************************************************************************/
 
 template<typename T, size_t Size>
-struct RingMRMW
+struct RingMRMW : public RingBase<T, Size>
 {
-    RingMRMW() : all(0) { ring.fill(nullptr); }
+    using RingBase<T, Size>::d;
+    using RingBase<T, Size>::ring;
 
-    constexpr size_t capacity() const { return Size; }
-
-    size_t size() const
+    bool push(T obj)
     {
-        uint64_t all = d.all;
-        uint32_t begin = all;
-        uint32_t end = all >> 32;
+        locklessCheck(obj, NullLog);
 
-        if (begin <= end)
-            return begin - end;
-        return Size - begin + end;
-    }
-
-    bool empty() const
-    {
-        uint64_t all = d.all;
-        uint32_t begin = all;
-        uint32_t end = all >> 32;
-
-        return begin == end;
-    }
-
-    bool push(T* obj)
-    {
         uint32_t pos = d.split.write;
 
         while (true) {
-            T* value = ring[pos];
+            T old = ring[pos];
 
-            if (!value && ring[pos].compare_exchange_strong(nullptr, obj)) {
+            if (!old && ring[pos].compare_exchange_strong(old, obj)) {
                 if (d.split.write == pos)
                     d.split.write.compare_exchange_strong(pos, pos + 1);
                 return true;
@@ -136,36 +157,27 @@ struct RingMRMW
         }
     }
 
-    T* pop()
+    T pop()
     {
         uint32_t pos = d.split.read;
 
         while (true) {
-            T* obj = ring[pos];
+            T old = ring[pos];
 
-            if (value && ring[pos].compare_exchange_strong(obj, nullptr)) {
+            if (old && ring[pos].compare_exchange_strong(old, T(0))) {
                 if (d.split.read == pos)
                     d.split.read.compare_exchange_strong(pos, pos + 1);
-                return obj;
+                return old;
             }
 
             if ((pos + 1) % Size == d.split.write)
-                return false;
+                return T(0);
 
             if (d.split.read == pos)
                 d.split.read.compare_exchange_strong(pos, pos + 1);
         }
     }
 
-private:
-    std::array<std::atomic<T*>, Size> ring;
-    union {
-        struct {
-            std::atomic<uint32_t> read;
-            std::atomic<uint32_t> write;
-        } split;
-        std::atomic<uint64_t> all;
-    } d;
 };
 
 
