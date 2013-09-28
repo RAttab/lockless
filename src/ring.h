@@ -46,7 +46,7 @@ struct RingBase
 
     locklessEnum size_t Size = Size_;
     locklessStaticAssert(Size > 0);
-    locklessStaticAssert(Size < (uint32_t(0) - 1));
+    locklessStaticAssert(Size <= (uint32_t(0) - 1));
 
     constexpr size_t capacity() const { return Size; }
 
@@ -204,8 +204,11 @@ struct RingQueueMRMW : public details::RingBase<T, Size>
     happens to be full then the tail of the queue is popped and discarded.
 
     \todo would be nice if overwritting the tail didn't require an actual pop
-    op. Unfortunately, it's kind of required to ensure that it isn't read while
-    we're writting a new head.
+    op. Unfortunately, it's kind of required to ensure that the slot isn't read
+    by another thread while we're writting a new head.
+
+    \todo This actually leaks memory when we discard the head and T happens to
+    be a pointer. Need to find an elegant way around this problem.
 
  */
 template<typename T, size_t Size>
