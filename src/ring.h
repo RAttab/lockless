@@ -7,10 +7,17 @@
    Note that you can pick and choose the pop and push functions from RingSRSW
    and RingMRMW to get RingSRMW and RingMRSR.
 
-   \todo The name is kinda bad as it could also a ring buffer where we overwrite
-   when the ring is full. Take Log as an example.
+   \todo The name is kinda bad as it could also be a ring buffer where we
+   overwrite a value when the ring is full.
 
-*/
+   \todo Could probably juice out extra performance by splitting the read and
+   write cursors on different cache lines but we would lose our ability to have
+   useful size metrics. Also, no amount of optimization will make any single
+   queue scale (not entirely true but the alternative isn't a queue in the
+   traditional sense and requires an op to wait for an oposite op to take place
+   before it can continue).
+
+ */
 
 #ifndef __lockless__ring_h__
 #define __lockless__ring_h__
@@ -28,6 +35,8 @@ namespace lockless {
 /******************************************************************************/
 /* RING BASE                                                                  */
 /******************************************************************************/
+
+namespace details {
 
 template<typename T, size_t Size_>
 struct RingBase
@@ -88,6 +97,7 @@ protected:
 
 };
 
+} // namespace details
 
 
 /******************************************************************************/
@@ -95,13 +105,15 @@ protected:
 /******************************************************************************/
 
 template<typename T, size_t Size>
-struct RingSRSW : public RingBase<T, Size>
+struct RingSRSW : public details::RingBase<T, Size>
 {
-    using RingBase<T, Size>::d;
-    using RingBase<T, Size>::ring;
+    using details::RingBase<T, Size>::d;
+    using details::RingBase<T, Size>::ring;
 
     bool push(T obj)
     {
+        // Null is a reserved value used by the algorithm to indicate that a
+        // slot is empty.
         locklessCheck(obj, NullLog);
 
         uint32_t pos = d.split.write;
@@ -133,13 +145,15 @@ struct RingSRSW : public RingBase<T, Size>
 /******************************************************************************/
 
 template<typename T, size_t Size>
-struct RingMRMW : public RingBase<T, Size>
+struct RingMRMW : public details::RingBase<T, Size>
 {
-    using RingBase<T, Size>::d;
-    using RingBase<T, Size>::ring;
+    using details::RingBase<T, Size>::d;
+    using details::RingBase<T, Size>::ring;
 
     bool push(T obj)
     {
+        // Null is a reserved value used by the algorithm to indicate that a
+        // slot is empty.
         locklessCheck(obj, NullLog);
 
         uint32_t pos = d.split.write;
@@ -153,8 +167,7 @@ struct RingMRMW : public RingBase<T, Size>
                 return true;
             }
 
-            if ((pos % Size) == (d.split.read % Size))
-                return false;
+            if (pos - d.split.read == Size) return false;
 
             if (d.split.write == pos)
                 d.split.write.compare_exchange_strong(pos, pos + 1);
@@ -163,7 +176,6 @@ struct RingMRMW : public RingBase<T, Size>
 
     T pop()
     {
-
         uint32_t pos = d.split.read;
 
         while (true) {
@@ -175,8 +187,7 @@ struct RingMRMW : public RingBase<T, Size>
                 return old;
             }
 
-            if (pos == d.split.write)
-                return T(0);
+            if (pos == d.split.write) return T(0);
 
             if (d.split.read == pos)
                 d.split.read.compare_exchange_strong(pos, pos + 1);

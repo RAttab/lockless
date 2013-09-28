@@ -60,7 +60,7 @@ void testSeq(const std::string& title)
         locklessCheckEq(ring.empty(), size == size_t(0), log);
     };
 
-    for (size_t it = 0; it < 10; ++it) {
+    for (size_t it = 0; it < 3; ++it) {
         cerr << fmtTitle(to_string(it)) << endl;
 
         checkSize(0);
