@@ -115,3 +115,5 @@ lockless_test(alloc_perf)
 lockless_test(lock)
 lockless_test(lock_para)
 lockless_test(lock_perf)
+
+lockless_test(ring)

@@ -2,11 +2,13 @@
    Rémi Attab (remi.attab@gmail.com), 28 Sep 2013
    FreeBSD-style copyright and disclaimer apply
 
-   Lock-free ring buffers.
+   Lock-free ring queue.
 
    Note that you can pick and choose the pop and push functions from RingSRSW
-   and RingMRMW to get RingSRMW and RingMRSR. Didn't do it here because it would
-   be tedious and wouldn't add much.
+   and RingMRMW to get RingSRMW and RingMRSR.
+
+   \todo The name is kinda bad as it could also a ring buffer where we overwrite
+   when the ring is full. Take Log as an example.
 
 */
 
@@ -17,6 +19,7 @@
 
 #include <array>
 #include <atomic>
+#include <sstream>
 
 
 namespace lockless {
@@ -47,9 +50,7 @@ struct RingBase
         uint32_t rpos = all;
         uint32_t wpos = all >> 32;
 
-        if (rpos <= wpos)
-            return wpos - rpos;
-        return Size - rpos + wpos;
+        return wpos - rpos;
     }
 
     bool empty() const
@@ -64,9 +65,12 @@ struct RingBase
     std::string dump() const
     {
         std::stringstream ss;
+
         ss << format("{ w=%x, r=%x, [ ", d.split.write, d.split.read);
+
         for (size_t i = 0; i < Size; ++i)
             ss << format("%lld:%p ", i, ring[i]);
+
         ss << "] }";
         return ss.str();
     }
@@ -102,8 +106,8 @@ struct RingSRSW : public RingBase<T, Size>
 
         uint32_t pos = d.split.write;
 
-        if (ring[pos]) return false;
-        ring[pos] = obj;
+        if (ring[pos % Size]) return false;
+        ring[pos % Size] = obj;
 
         d.split.write++;
         return true;
@@ -113,9 +117,9 @@ struct RingSRSW : public RingBase<T, Size>
     {
         uint32_t pos = d.split.read;
 
-        T value = ring[pos];
+        T value = ring[pos % Size];
         if (!value) return T(0);
-        ring[pos] = T(0);
+        ring[pos % Size] = T(0);
 
         d.split.read++;
         return value;
@@ -141,15 +145,15 @@ struct RingMRMW : public RingBase<T, Size>
         uint32_t pos = d.split.write;
 
         while (true) {
-            T old = ring[pos];
+            T old = ring[pos % Size];
 
-            if (!old && ring[pos].compare_exchange_strong(old, obj)) {
+            if (!old && ring[pos % Size].compare_exchange_strong(old, obj)) {
                 if (d.split.write == pos)
                     d.split.write.compare_exchange_strong(pos, pos + 1);
                 return true;
             }
 
-            if ((pos + 1) % Size == d.split.read)
+            if ((pos % Size) == (d.split.read % Size))
                 return false;
 
             if (d.split.write == pos)
@@ -159,18 +163,19 @@ struct RingMRMW : public RingBase<T, Size>
 
     T pop()
     {
+
         uint32_t pos = d.split.read;
 
         while (true) {
-            T old = ring[pos];
+            T old = ring[pos % Size];
 
-            if (old && ring[pos].compare_exchange_strong(old, T(0))) {
+            if (old && ring[pos % Size].compare_exchange_strong(old, T(0))) {
                 if (d.split.read == pos)
                     d.split.read.compare_exchange_strong(pos, pos + 1);
                 return old;
             }
 
-            if ((pos + 1) % Size == d.split.write)
+            if (pos == d.split.write)
                 return T(0);
 
             if (d.split.read == pos)
