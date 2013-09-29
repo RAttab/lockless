@@ -117,3 +117,4 @@ lockless_test(lock_para)
 lockless_test(lock_perf)
 
 lockless_test(ring)
+lockless_test(ring_para)

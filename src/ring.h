@@ -265,7 +265,6 @@ private:
 };
 
 
-
 } // lockless
 
 #endif // __lockless__ring_h__
