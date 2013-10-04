@@ -125,7 +125,7 @@ struct RingQueueSRSW : public details::RingBase<T, Size>
         if (ring[pos % Size]) return false;
         ring[pos % Size] = obj;
 
-        d.split.write++;
+        d.split.write = pos + 1;
         return true;
     }
 
@@ -137,7 +137,7 @@ struct RingQueueSRSW : public details::RingBase<T, Size>
         if (!value) return T(0);
         ring[pos % Size] = T(0);
 
-        d.split.read++;
+        d.split.read = pos + 1;
         return value;
     }
 
