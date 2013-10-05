@@ -14,6 +14,7 @@
 #include "debug.h"
 #include "log.h"
 #include "check.h"
+#include "arch.h"
 
 #include <atomic>
 #include <functional>
@@ -170,8 +171,7 @@ private:
     }
 
 
-    // \todo Align to a cache line.
-    struct Epoch
+    struct locklessCacheAligned Epoch
     {
         std::atomic<size_t> count;
         List<DeferFn> deferList;
@@ -184,7 +184,7 @@ private:
     };
 
 
-    std::atomic<size_t> current; // \todo align to a cache line.
+    locklessCacheAligned std::atomic<size_t> current;
     Epoch epochs[2];
 
 public:
