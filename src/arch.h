@@ -10,6 +10,20 @@
 
 #include <cstddef>
 
+/******************************************************************************/
+/* CONSTANTS                                                                  */
+/******************************************************************************/
+
+namespace lockless {
+
+#define locklessCacheLine 64
+static constexpr size_t CacheLine = locklessCacheLine;
+
+#define locklessPageSize 4096
+static constexpr size_t PageSize  = locklessPageSize;
+
+} // lockless
+
 
 /******************************************************************************/
 /* COMPILERS                                                                  */
@@ -29,15 +43,10 @@
 
 
 /******************************************************************************/
-/* CONSTANTS                                                                  */
+/* UTILS                                                                      */
 /******************************************************************************/
 
-namespace lockless {
+#define locklessCacheAligned locklessAlign(locklessCacheLine)
 
-// \todo Configure at build time.
-static constexpr size_t CacheLine = 64;
-static constexpr size_t PageSize  = 4096;
-
-} // lockless
 
 #endif // __lockless__arch_h__
