@@ -90,6 +90,8 @@ lockless_test(list)
 lockless_test(list_para)
 
 lockless_test(snzi)
+lockless_test(snzi_para)
+lockless_test(snzi_perf)
 
 lockless_test(grcu)
 lockless_test(grcu_para)
