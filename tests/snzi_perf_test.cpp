@@ -33,6 +33,21 @@ enum { Iterations = 100 };
 /* OPS                                                                        */
 /******************************************************************************/
 
+typedef std::atomic<size_t> CasContext;
+
+size_t doCasThread(CasContext& value, unsigned)
+{
+    for (size_t it = 0; it < Iterations; ++it) {
+        size_t old = value;
+        while (!value.compare_exchange_weak(old, old + 1));
+
+        old = value;
+        while (!value.compare_exchange_weak(old, old - 1));
+    }
+
+    return Iterations;
+}
+
 template<typename Snzi>
 size_t doIncDecThread(Snzi& snzi, unsigned)
 {
@@ -86,10 +101,17 @@ int main(int argc, char** argv)
     size_t lengthMs = 1000;
     if (argc > 2) lengthMs = stoull(string(argv[2]));
 
-    runTest<1, 1>("control", thCount, lengthMs);
-    runTest<4, 2>("tree-4-2", thCount, lengthMs);
-    runTest<8, 2>("tree-8-2", thCount, lengthMs);
-    runTest<8, 4>("tree-8-4", thCount, lengthMs);
+    {
+        PerfTest<CasContext> perf;
+        perf.add("cas", doCasThread, thCount);
+        perf.run(lengthMs);
+        cerr << perf.printStats("cas") << endl;
+    }
+
+    runTest<1, 1>("snzi-1-1", thCount, lengthMs);
+    runTest<4, 2>("snzi-4-2", thCount, lengthMs);
+    runTest<8, 2>("snzi-8-2", thCount, lengthMs);
+    runTest<8, 4>("snzi-8-4", thCount, lengthMs);
 
     return 0;
 }
