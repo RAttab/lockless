@@ -48,6 +48,13 @@ struct Wall
 
         return ts.tv_sec + (ts.tv_nsec * 0.0000000001);
     }
+
+    static constexpr double toSec(ClockT t) { return t; }
+    static constexpr ClockT diff(ClockT first, ClockT second)
+    {
+        return second - first;
+    }
+
 } wall;
 
 
@@ -77,6 +84,14 @@ struct Rdtsc
         asm volatile ("rdtsc" : "=a" (high), "=d" (low));
         return uint64_t(high) << 32 | low;
     }
+
+    // \todo toSec implementation.
+
+    static constexpr ClockT diff(ClockT first, ClockT second)
+    {
+        return first > second ? ~ClockT(0) - first + second : second - first;
+    }
+
 } rdtsc;
 
 
@@ -97,6 +112,14 @@ struct Rdtscp
         asm volatile ("rdtscp" : "=a" (high), "=d" (low));
         return uint64_t(high) << 32 | low;
     }
+
+    // \todo toSec implementation.
+
+    static constexpr ClockT diff(ClockT first, ClockT second)
+    {
+        return first > second ? ~ClockT(0) - first + second : second - first;
+    }
+
 } rdtscp;
 
 
@@ -128,6 +151,13 @@ struct Monotonic
 
         return ts.tv_sec + (ts.tv_nsec * 0.0000000001);
     }
+
+    static constexpr double toSec(ClockT t) { return t; }
+    static constexpr ClockT diff(ClockT first, ClockT second)
+    {
+        return second - first;
+    }
+
 } monotonic;
 
 
@@ -148,6 +178,17 @@ struct NsecMonotonic
 
         return ts.tv_nsec;
     }
+
+    static constexpr double toSec(ClockT t)
+    {
+        return double(t) * 0.0000000001;
+    }
+
+    static constexpr ClockT diff(ClockT first, ClockT second)
+    {
+        return first > second ? 1000000000ULL - first + second : second - first;
+    }
+
 } nsecMonotonic;
 
 
@@ -160,38 +201,24 @@ struct Timer
 {
     typedef typename Clock::ClockT ClockT;
 
-    Timer()
-    {
-        adj = clock();
-        start = clock();
-        adj = diff(adj, start);
-    }
+    Timer() : start(clock()) {}
 
     double elapsed() const locklessAlwaysInline
     {
-        return diff(start, clock()) - adj;
+        return Clock::diff(start, clock());
     }
 
     double reset() locklessAlwaysInline
     {
         ClockT end = clock();
-        ClockT elapsed = diff(start, end) - adj;
+        ClockT elapsed = Clock::diff(start, end);
         start = end;
-        return elapsed;
+        return Clock::toSec(elapsed);
     }
 
 private:
-
-    uint64_t diff(uint64_t first, uint64_t second) const locklessAlwaysInline
-    {
-        if (Clock::CanWrap && second < first)
-            return ~uint64_t(0) - second + first;
-        return second - first;
-    }
-
     Clock clock;
     ClockT start;
-    ClockT adj;
 };
 
 } // lockless

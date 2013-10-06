@@ -164,13 +164,12 @@ struct PerfTest
         {
             double throughput = operations / elapsed / threadCount;
 
-            auto toSec = [] (double ns) { return ns * 0.0000000001; };
             return format(
                     "%-15s sec/ops=[ %s %s %s ] ops/sec=%s",
                     title.c_str(),
-                    fmtElapsed(toSec(latencySamples.min())).c_str(),
-                    fmtElapsed(toSec(latencySamples.median())).c_str(),
-                    fmtElapsed(toSec(latencySamples.max())).c_str(),
+                    fmtElapsed(latencySamples.min()).c_str(),
+                    fmtElapsed(latencySamples.median()).c_str(),
+                    fmtElapsed(latencySamples.max()).c_str(),
                     fmtValue(throughput).c_str());
         }
     };
@@ -230,7 +229,7 @@ private:
             }
 
             size_t ops = gr.fn(ctx, th.id);
-            double latency = double(perOp.reset()) / ops;
+            double latency = perOp.reset() / ops;
 
             th.stats.operations += ops;
             th.stats.latencySamples.sample(latency);
