@@ -19,8 +19,12 @@ using namespace lockless;
 template<size_t Nodes, size_t Arity>
 void basicTest()
 {
+    cerr << endl
+        << fmtTitle(format("nodes=%lld, arity=%lld", Nodes, Arity))
+        << endl;
+
     Snzi<Nodes, Arity> snzi;
-    auto& log = snzi.log;
+    auto& log = NullLog;
 
     for (size_t it = 0; it < 10; ++it) {
         locklessCheck(!snzi.test(), log);

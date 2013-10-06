@@ -69,7 +69,7 @@ private:
 
     size_t nodeForThread() const { return threadId() % tree.size(); }
 
-    bool inc(size_t node)
+    bool inc(size_t node) locklessNeverInline
     {
         if (!node) return tree[0].fetch_add(1) == 0;
 
@@ -89,7 +89,7 @@ private:
                 value = 1;
             }
 
-            locklessCheckEq(value, size_t(1), log);
+            locklessCheckEq(value, size_t(1), NullLog);
 
             bool shifted = inc(parent);
 
@@ -100,7 +100,7 @@ private:
         }
     }
 
-    bool dec(size_t node)
+    bool dec(size_t node) locklessNeverInline
     {
         if (!node) return tree[0].fetch_sub(1) == 1;
 
@@ -108,7 +108,7 @@ private:
         size_t parent = node / Arity;
 
         while (true) {
-            locklessCheckGe(value, size_t(2), log);
+            locklessCheckGe(value, size_t(2), NullLog);
 
             if (value > 2) {
                 if (!tree[node].compare_exchange_weak(value, value - 1))
@@ -125,17 +125,12 @@ private:
         return false;
     }
 
-    /* Pad ensures one value per cache line. We can't use alignas or the gcc
-       attribute because they don't play well with templats.
-     */
-    typedef Pad<std::atomic<size_t>, CacheLine> Counter;
-    locklessStaticAssert((CheckPad<std::atomic<size_t>, CacheLine>::value));
-
+    /** Gcc drops attributes in template args due to them not being part of name
+        mangling so we have to create a new type instead to get our alignment
+        attribute in.
+    */
+    struct locklessCacheAligned Counter : public std::atomic<size_t> {};
     std::array<Counter, Nodes> tree;
-
-
-public:
-    DebuggingLog<1024, DebugSnzi>::type log;
 };
 
 
@@ -157,11 +152,7 @@ struct Snzi<1, Arity>
     bool dec() { return counter.fetch_sub(1) == 1; }
 
 private:
-
     std::atomic<size_t> counter;
-
-public:
-    Log<0> log;
 };
 
 typedef Snzi<1,1> NullSnzi;
