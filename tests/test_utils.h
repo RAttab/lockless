@@ -22,49 +22,6 @@
 
 namespace lockless {
 
-/******************************************************************************/
-/* FORMAT UTILS                                                               */
-/******************************************************************************/
-
-std::string fmtElapsed(double elapsed)
-{
-    static const std::string scaleIndicators = "smunpf?";
-
-    size_t i = 0;
-    while (elapsed < 1.0 && i < (scaleIndicators.size() - 1)) {
-        elapsed *= 1000.0;
-        i++;
-    }
-
-    return format("%6.2f%c", elapsed, scaleIndicators[i]);
-}
-
-
-std::string fmtValue(double value)
-{
-    static const std::string scaleIndicators = " kmgth?";
-
-    size_t i = 0;
-    while (value >= 1000.0 && i < (scaleIndicators.size() - 1)) {
-        value /= 1000.0;
-        i++;
-    }
-
-    return format("%6.2f%c", value, scaleIndicators[i]);
-}
-
-std::string fmtRatio(double num, double denom)
-{
-    double value = (num / denom) * 100;
-    return format("%6.2f%%", value);
-}
-
-
-std::string fmtTitle(const std::string& title, char fill = '-')
-{
-    std::string filler(80 - title.size() - 4, fill);
-    return format("[ %s ]%s", title.c_str(), filler.c_str());
-}
 
 /******************************************************************************/
 /* PARALLEL TEST                                                              */
