@@ -74,9 +74,11 @@ install(TARGETS lockless DESTINATION lib)
 #------------------------------------------------------------------------------#
 
 function(lockless_test name)
-    add_executable(${name}_test tests/${name}_test.cpp)
-    target_link_libraries(${name}_test lockless boost_unit_test_framework)
-    add_test(${name} ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${name}_test)
+    if(CMAKE_SOURCE_DIR STREQUAL ${PROJECT_SOURCE_DIR})
+        add_executable(${name}_test tests/${name}_test.cpp)
+        target_link_libraries(${name}_test lockless boost_unit_test_framework)
+        add_test(${name} ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${name}_test)
+    endif()
 endfunction()
 
 
