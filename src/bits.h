@@ -22,6 +22,13 @@ inline size_t pop(unsigned x)           { return __builtin_popcount(x); }
 inline size_t pop(unsigned long x)      { return __builtin_popcountl(x); }
 inline size_t pop(unsigned long long x) { return __builtin_popcountll(x); }
 
+template<typename Int>
+size_t log2(Int x)
+{
+    return (sizeof(x) * 8) - clz(x);
+}
+
+
 } // lockless
 
 #endif // __lockless__bits_h__
