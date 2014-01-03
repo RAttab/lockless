@@ -25,7 +25,7 @@ namespace lockless {
 /* SLEEP                                                                      */
 /******************************************************************************/
 
-void sleep(size_t ms)
+inline void sleep(size_t ms)
 {
     std::this_thread::sleep_for(std::chrono::milliseconds(ms));
 }
@@ -55,7 +55,9 @@ struct Wall
         return second - first;
     }
 
-} wall;
+};
+
+inline Wall::ClockT wall() { return Wall()(); }
 
 
 /******************************************************************************/
@@ -92,7 +94,9 @@ struct Rdtsc
         return first > second ? ~ClockT(0) - first + second : second - first;
     }
 
-} rdtsc;
+};
+
+inline Rdtsc::ClockT rdtsc() { return Rdtsc()(); }
 
 
 /** Same as rdtsc except that it introduces a load fence before the counter is
@@ -120,7 +124,10 @@ struct Rdtscp
         return first > second ? ~ClockT(0) - first + second : second - first;
     }
 
-} rdtscp;
+};
+
+
+inline Rdtscp::ClockT rdtscp() { return Rdtscp()(); }
 
 
 /******************************************************************************/
@@ -158,7 +165,9 @@ struct Monotonic
         return second - first;
     }
 
-} monotonic;
+};
+
+inline Monotonic::ClockT monotonic() { return Monotonic()(); }
 
 
 /** Same as monotonic except that it returns only the nsec portion of the sample
@@ -189,7 +198,9 @@ struct NsecMonotonic
         return first > second ? 1000000000ULL - first + second : second - first;
     }
 
-} nsecMonotonic;
+};
+
+inline NsecMonotonic::ClockT nsecMonotonic() { return NsecMonotonic()(); }
 
 
 /******************************************************************************/
